@@ -138,6 +138,77 @@ CHANGE_PATTERNS: dict[str, dict] = {
             "Test from browser, not just curl",
         ],
     },
+    "datetime_boundary": {
+        "patterns": [
+            r"datetime",
+            r"timezone",
+            r"tzinfo",
+            r"openpyxl",
+            r"xlsxwriter",
+            r"pandas.*to_excel",
+            r"\.xls",
+        ],
+        "name": "DATETIME/EXCEL BOUNDARY CHANGES",
+        "tests": [
+            "Use tz-aware datetimes in tests: datetime.now(timezone.utc)",
+            "Test with real DB objects, not mocks (PostgreSQL returns tz-aware)",
+            "Add contract test: assert dt.tzinfo is None before Excel export",
+            "Check: does code handle both naive and tz-aware inputs?",
+        ],
+    },
+    "serialization_boundary": {
+        "patterns": [
+            r"\.to_dict",
+            r"\.model_dump",
+            r"json\.dumps",
+            r"jsonify",
+            r"StreamingResponse",
+            r"FileResponse",
+            r"BytesIO",
+        ],
+        "name": "SERIALIZATION BOUNDARY CHANGES",
+        "tests": [
+            "Test with production data types (UUID objects, Decimal, datetime)",
+            "Verify JSON serialization doesn't lose type info",
+            "Check: custom encoders for non-JSON-native types?",
+            "E2E test: parse the actual output, not just status code",
+        ],
+    },
+    "orm_boundary": {
+        "patterns": [
+            r"\.query\(",
+            r"\.filter\(",
+            r"\.all\(\)",
+            r"\.first\(\)",
+            r"session\.",
+            r"db_session",
+            r"AsyncSession",
+        ],
+        "name": "ORM/DATABASE BOUNDARY CHANGES",
+        "tests": [
+            "Integration test with real DB, not mocked queries",
+            "Test data should match DB column types exactly",
+            "Check: datetime columns → tz-aware in PostgreSQL",
+            "Check: UUID columns → UUID objects, not strings",
+        ],
+    },
+    "file_export": {
+        "patterns": [
+            r"build_excel",
+            r"to_csv",
+            r"to_excel",
+            r"write.*xlsx",
+            r"Workbook\(",
+            r"csv\.writer",
+        ],
+        "name": "FILE EXPORT CHANGES",
+        "tests": [
+            "Test export with production-like data (tz-aware dates, UUIDs)",
+            "Actually parse the output file in tests, don't just check size",
+            "Property test: handle both naive and tz-aware datetime inputs",
+            "Boundary test: verify data survives round-trip (export → import)",
+        ],
+    },
 }
 
 
