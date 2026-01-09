@@ -316,46 +316,40 @@ def main():
     cwd = input_data.get("cwd", "")
     stop_hook_active = input_data.get("stop_hook_active", False)
 
-    # ALWAYS check status file - even on second attempt
-    status_ok, status_msg = check_status_file(cwd)
-
-    if not status_ok:
-        instructions = f"""BLOCKED: Status file not updated.
-
-{status_msg}
-
-You MUST update {cwd}/.claude/status.md before stopping.
-
-Write your completion status now using this format:
-```markdown
----
-status: completed
-updated: <ISO timestamp>
-task: <what was accomplished>
----
-
-## Summary
-<1-2 sentence summary of what was done>
-```
-
-After updating the status file, you may try to stop again."""
-        print(instructions, file=sys.stderr)
-        sys.exit(2)
-
-    # Break the loop - if we already blocked once, allow stop
+    # LOOP PREVENTION - if we already blocked once with full checklist, allow stop
     if stop_hook_active:
         sys.exit(0)
 
-    # Detect change types
+    # Gather ALL checks - don't exit early on any single failure
+    status_ok, status_msg = check_status_file(cwd)
     diff = get_git_diff()
     change_types = detect_change_types(diff)
     change_specific_tests = format_change_specific_tests(change_types)
 
-    # First stop - block and give instructions
+    # Build status section (item 0) - only shown if status check failed
+    status_section = ""
+    if not status_ok:
+        status_section = f"""
+0. 🚫 STATUS FILE UPDATE REQUIRED:
+   {status_msg}
+
+   Update {cwd}/.claude/status.md with:
+   ```markdown
+   ---
+   status: completed
+   updated: <timestamp>
+   task: <what was done>
+   ---
+   ## Summary
+   <accomplishments>
+   ```
+"""
+
+    # First stop - block and give FULL instructions (always show complete checklist)
     instructions = f"""Use ultrathink to verify all requirements are met.
 
 Before stopping, complete these checks:
-
+{status_section}
 1. CLAUDE.md COMPLIANCE (if code written):
    - boring over clever, local over abstract
    - small composable units, stateless with side effects at edges
@@ -377,6 +371,12 @@ Before stopping, complete these checks:
    - Non-obvious gotchas not documented elsewhere
    - Consolidate/update existing entries rather than append duplicates
    - If nothing significant learned, skip this step{change_specific_tests}
+
+5. COMMIT AND PUSH:
+   - Stage all changes: git add -A
+   - Commit with descriptive message summarizing the work
+   - Push to remote: git push
+   - If on a feature branch, consider opening a PR
 
 After completing these checks, you may stop."""
 
