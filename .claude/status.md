@@ -1,8 +1,8 @@
 ---
 status: completed
-updated: 2026-01-09T17:32:00+00:00
-task: Fixed stop-validator checklist bypass issue
+updated: 2026-01-09T16:32:00+00:00
+task: Fixed status enforcement with checklist visibility
 ---
 
 ## Summary
-Restructured main() to always show full compliance checklist on first stop. Status check is now item 0 (if failed) instead of an early exit, preventing the checklist from being bypassed.
+Added status enforcement on second stop: checklist shown on first stop, status blocking enforced on second stop before allowing completion.

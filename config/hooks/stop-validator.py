@@ -316,8 +316,30 @@ def main():
     cwd = input_data.get("cwd", "")
     stop_hook_active = input_data.get("stop_hook_active", False)
 
-    # LOOP PREVENTION - if we already blocked once with full checklist, allow stop
+    # SECOND STOP - checklist was shown, now enforce status before allowing stop
     if stop_hook_active:
+        status_ok, status_msg = check_status_file(cwd)
+        if not status_ok:
+            # Status still stale - block until updated
+            instructions = f"""🚫 STATUS FILE STILL NOT UPDATED
+
+{status_msg}
+
+You MUST update {cwd}/.claude/status.md before stopping:
+```markdown
+---
+status: completed
+updated: <timestamp>
+task: <what was done>
+---
+## Summary
+<accomplishments>
+```
+
+Update the status file, then try to stop again."""
+            print(instructions, file=sys.stderr)
+            sys.exit(2)
+        # Status OK - allow stop
         sys.exit(0)
 
     # Gather ALL checks - don't exit early on any single failure

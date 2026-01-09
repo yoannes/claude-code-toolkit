@@ -3,11 +3,11 @@
 ## Architectural Decisions
 
 ### Status File Enforcement (2026-01-09, updated)
-**Decision**: Status.md is checked as part of the compliance checklist, NOT as a separate early exit.
+**Decision**: Two-phase enforcement - checklist visibility AND status blocking.
 
-**Why**: When status was a separate early exit (before checklist), it set `stop_hook_active=True` on failure. This meant the second stop would bypass the entire compliance checklist. By moving status into the checklist as "item 0", users always see the full checklist on first stop.
+**Why**: Need both: (1) Full checklist always shown on first stop, (2) Status file actually enforced before allowing stop.
 
 **Implementation**:
-- `status-working.py` (UserPromptSubmit) - reminds Claude to update status
-- `stop-validator.py` (Stop) - shows status as item 0 in checklist if stale/missing
-- `stop_hook_active` check is now FIRST (loop prevention), then full checklist shown
+- First stop: Show full checklist with status as item 0 (if failed)
+- Second stop: Check status again - block if still stale, allow if fresh
+- This ensures checklist is never bypassed AND status is always enforced
