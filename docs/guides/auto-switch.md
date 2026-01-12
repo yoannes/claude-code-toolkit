@@ -182,6 +182,14 @@ If you prefer a clean start on each switch:
 CLAUDE_CONFIG_DIR=~/.claude-max-2 claude
 ```
 
+### First-Run Login Prompt
+
+When running via the wrapper for the first time, you may be prompted to log in even if you've previously authenticated.
+
+**Why**: Setting `CLAUDE_CONFIG_DIR` explicitly (even to the same directory) may trigger Claude to treat it as a new configuration.
+
+**Solution**: This only happens once. Complete the login and subsequent runs will work normally.
+
 ### Rate Limit Not Detected
 
 If switches aren't happening when expected, Anthropic may have changed their message format.
@@ -204,7 +212,14 @@ The script uses `CLAUDE_CONFIG_DIR` - an undocumented but official environment v
 
 ### PTY Handling
 
-The script uses Python's `pty` module to spawn Claude in a pseudo-terminal, preserving interactive features like colors, cursor movement, and real-time output.
+The script uses Python's `pty` module to spawn Claude in a pseudo-terminal, which:
+- Preserves interactive features (colors, cursor movement, real-time output)
+- Monitors stdout for rate limit patterns
+- Forwards stdin to the child process for full interactivity
+- Sets terminal to raw mode with `tty.setraw()` for proper keystroke handling
+- Restores terminal settings on exit via `termios.tcsetattr()`
+
+This bidirectional PTY handling is essential - without forwarding stdin to the child process, the terminal would appear frozen.
 
 ### Rate Limit Detection
 
