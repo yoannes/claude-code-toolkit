@@ -2,8 +2,8 @@
   "accounts": [
     {
       "name": "primary",
-      "config_dir": "~/.claude-max-1",
-      "description": "Primary Claude Max account"
+      "config_dir": "~/.claude",
+      "description": "Primary Claude Max account (current)"
     },
     {
       "name": "secondary",
@@ -12,13 +12,12 @@
     }
   ],
   "detection_patterns": [
-    "usage limit",
-    "rate limit",
-    "capacity.*exceeded",
-    "limit.*reached",
-    "please wait.*reset",
-    "you've reached",
-    "quota.*exceeded"
+    "you've hit your usage limit",
+    "you've reached your.*limit",
+    "usage limit.*reached",
+    "rate limit.*please try again",
+    "capacity.*exceeded.*please wait",
+    "daily.*limit.*reset"
   ],
   "context_preservation": {
     "enabled": true,
