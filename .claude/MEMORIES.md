@@ -12,6 +12,17 @@
 - Second stop: Check status again - block if still stale, allow if fresh
 - This ensures checklist is never bypassed AND status is always enforced
 
+### Claude Auto-Switch Multi-Account (2026-01-12)
+**Decision**: Use `CLAUDE_CONFIG_DIR` env var with PTY wrapper for automatic account switching.
+
+**Why**: No programmatic API exists to detect rate limits - only terminal output patterns. Using PTY preserves interactive features while allowing stdout monitoring.
+
+**Implementation**:
+- `~/.claude` = primary account, `~/.claude-max-2` = backup
+- Wrapper monitors output for rate limit patterns ("usage limit", "capacity exceeded", etc.)
+- On detection: saves last 50 lines as context, switches account, injects context as prompt
+- Config in `~/.claude/scripts/claude-auto-switch/config.json`
+
 ### Change-Type Detection Filtering (2026-01-09)
 **Decision**: Three-layer filtering to reduce false positives in stop-validator pattern detection.
 

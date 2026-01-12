@@ -1,0 +1,28 @@
+{
+  "accounts": [
+    {
+      "name": "primary",
+      "config_dir": "~/.claude-max-1",
+      "description": "Primary Claude Max account"
+    },
+    {
+      "name": "secondary",
+      "config_dir": "~/.claude-max-2",
+      "description": "Backup Claude Max account"
+    }
+  ],
+  "detection_patterns": [
+    "usage limit",
+    "rate limit",
+    "capacity.*exceeded",
+    "limit.*reached",
+    "please wait.*reset",
+    "you've reached",
+    "quota.*exceeded"
+  ],
+  "context_preservation": {
+    "enabled": true,
+    "method": "summary_injection",
+    "max_lines": 50
+  }
+}
