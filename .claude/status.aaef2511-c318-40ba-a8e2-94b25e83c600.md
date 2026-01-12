@@ -1,8 +1,8 @@
 ---
 status: working
-updated: 2026-01-12T11:52:49+00:00
-task: Fix false positive rate limit detection in auto-switch
+updated: 2026-01-12T12:06:15+00:00
+task: Fix UnicodeDecodeError in finalize-status-v5.py
 ---
 
 ## Summary
-Rate limit detection is triggering incorrectly - matching patterns when no actual rate limit exists. Need to investigate detection patterns.
+Hook failing with UnicodeDecodeError when git diff contains non-UTF-8 bytes. Need to add errors="replace" to subprocess call.
