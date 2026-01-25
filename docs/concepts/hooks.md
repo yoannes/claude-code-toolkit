@@ -4,34 +4,34 @@ Reference documentation for implementing global Claude Code hooks that inject co
 
 ## Overview
 
-Claude Code supports a hooks system that executes shell commands in response to lifecycle events. This document covers five event types:
+Claude Code supports a hooks system that executes shell commands in response to lifecycle events. This document covers seven event types:
 
 1. **SessionStart (Context Injection)**: Force Claude to read project documentation before beginning work
-2. **Stop (Completion Checkpoint)**: Block Claude from stopping until completion checkpoint passes
+2. **Stop (Compliance Blocking)**: Block Claude from stopping until compliance checks are addressed
 3. **UserPromptSubmit (On-Demand Doc Reading)**: Trigger deep documentation reading when user says "read the docs"
-4. **PostToolUse (Post-Action Context)**: Inject autonomous execution context after plan approval
+4. **PreToolUse (Tool Interception)**: Auto-answer questions during autonomous execution
 5. **PermissionRequest (Permission Handling)**: Auto-approve tool permissions during appfix
+6. **PostToolUse (Post-Action Context)**: Inject execution context after plan approval
+7. **SubagentStop (Agent Validation)**: Validate subagent output quality before accepting
 
 > **Note**: Status file hooks were removed in January 2025. Anthropic's native Tasks feature now provides better session tracking and coordination. See [Tasks Deprecation Note](#tasks-deprecation-note) below.
 
 ## Key Concepts
 
-### Completion Checkpoint System
+### Two-Phase Stop Flow
 
-The Stop hook uses a **deterministic boolean checkpoint** to enforce completion:
+The Stop hook implements a two-phase blocking pattern to prevent infinite loops:
 
 ```
-Stop Hook Flow:
-1. Load .claude/completion-checkpoint.json
-2. Check booleans deterministically:
-   - is_job_complete: false → BLOCKED
-   - web_testing_done: false (if code changed) → BLOCKED
-   - deployed: false (if code changed) → BLOCKED
-   - what_remains not empty → BLOCKED
-3. All checks pass → Allow stop
+First stop (stop_hook_active=false):
+→ Show FULL compliance checklist
+→ Block (exit 2)
+
+Second stop (stop_hook_active=true):
+→ Allow stop (exit 0)
 ```
 
-The model must explicitly state true/false for each field. If any required boolean is `false`, the hook blocks and prompts continuation.
+This ensures Claude sees the full checklist at least once, while preventing infinite loops.
 
 ## Architecture
 
@@ -561,55 +561,127 @@ Stop hook error: JSON validation failed
 
 **Conclusion**: `type: "prompt"` hooks are unreliable. Use `type: "command"` with exit codes instead.
 
-## Appfix Autonomous Execution
+## Appfix Autonomous Execution Hooks
 
-The `/appfix` skill uses a simplified hook system based on **completion checkpoints**:
+The `/appfix` skill uses three specialized hooks to enforce fully autonomous execution. These hooks activate when appfix is detected via:
 
-### Detection Mechanism
+1. **Environment variable** (backwards compatibility): `APPFIX_ACTIVE=true`
+2. **State file existence** (primary): `.claude/appfix-state.json` exists in the project
 
-Appfix mode is detected via:
-1. **State file existence** (primary): `.claude/appfix-state.json` exists in the project
-2. **Environment variable** (backwards compatibility): `APPFIX_ACTIVE=true`
+The state-file detection is the primary mechanism since the appfix workflow creates this file early in the process, before ExitPlanMode is called. Environment variable detection is retained for backwards compatibility.
 
-### Hooks Used
+**CRITICAL**: The skill reads reference files from the PROJECT directory (`{project}/.claude/skills/appfix/references/`), NOT from global `~/.claude/`. If `service-topology.md` is missing, the skill MUST stop and create it before proceeding.
 
-| Hook | File | Purpose |
-|------|------|---------|
-| PostToolUse | plan-execution-reminder.py | Injects aggressive fix-verify loop instructions after ExitPlanMode |
-| PermissionRequest | appfix-exitplan-auto-approve.py | Auto-approves ExitPlanMode to enable autonomous execution |
-| PermissionRequest | appfix-bash-auto-approve.py | Auto-approves Bash commands during appfix |
-| Stop | stop-validator.py | Validates completion checkpoint booleans |
+### Architecture
 
-### PermissionRequest Hooks: Auto-Approve During Appfix
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         /appfix HOOK SYSTEM                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  PreToolUse(AskUserQuestion)                                                │
+│  └─→ appfix-auto-answer.py                                                  │
+│      └─→ If APPFIX_ACTIVE: Auto-select first option, inject continue msg   │
+│      └─→ If not active: Pass through (no output)                            │
+│                                                                              │
+│  PostToolUse(ExitPlanMode)                                                  │
+│  └─→ appfix-auto-approve.py                                                 │
+│      └─→ If APPFIX_ACTIVE: Inject aggressive fix-verify loop instructions  │
+│      └─→ If not active: Use standard plan-execution-reminder                │
+│                                                                              │
+│  Stop                                                                        │
+│  └─→ appfix-stop-validator.py                                               │
+│      └─→ If APPFIX_ACTIVE: Validate all services healthy before allowing   │
+│      └─→ If not active: Pass through (exit 0)                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-The appfix workflow uses two PermissionRequest hooks to enable fully autonomous execution.
+### PreToolUse Hook: Auto-Answer Questions
 
-#### ExitPlanMode Auto-Approve
+**File**: `~/.claude/hooks/appfix-auto-answer.py`
+
+**Purpose**: Prevent Claude from asking user questions during autonomous debugging by auto-selecting the first option.
+
+**Behavior**:
+1. Receives tool input for `AskUserQuestion` calls
+2. If `APPFIX_ACTIVE=true`: Returns `autoAnswers` with first option selected
+3. If not active: Silent pass-through
+
+**Hook Output Schema**:
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "suppressToolOutput": true,
+    "additionalContext": "[instructions to continue]",
+    "autoAnswers": {"0": "First option label"}
+  }
+}
+```
+
+**Configuration**:
+```json
+"PreToolUse": [
+  {
+    "matcher": "AskUserQuestion",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "python3 ~/.claude/hooks/appfix-auto-answer.py",
+        "timeout": 5
+      }
+    ]
+  }
+]
+```
+
+### PostToolUse Hook: Plan Execution
+
+**File**: `~/.claude/hooks/appfix-auto-approve.py`
+
+**Purpose**: Inject aggressive autonomous execution context after Claude exits plan mode.
+
+**Injected Context** (when active):
+```
+APPFIX AUTONOMOUS EXECUTION MODE - FIX-VERIFY LOOP ACTIVE
+
+1. EXECUTE THE FIX IMMEDIATELY - No confirmation needed
+2. DEPLOY IF REQUIRED - Trigger GitHub Actions, wait for completion
+3. RE-RUN HEALTH CHECKS - Verify fix worked
+4. LOOP OR EXIT:
+   - If healthy: Report success, exit
+   - If still broken: Increment iteration, continue debugging
+   - If max iterations (5): Report all attempted fixes, exit
+
+DO NOT ask for confirmation. DO NOT wait for user input.
+The user invoked /appfix specifically for autonomous debugging.
+```
+
+### PermissionRequest Hook: Auto-Approve Plan Mode
 
 **File**: `~/.claude/hooks/appfix-exitplan-auto-approve.py`
 
-**Purpose**: Auto-approve the ExitPlanMode permission dialog during appfix.
+**Purpose**: Auto-approve the ExitPlanMode permission dialog during appfix to enable truly autonomous execution.
 
 **Behavior**:
 1. Receives permission request for `ExitPlanMode` tool
-2. If appfix state file exists: Returns decision to allow the tool
+2. If `APPFIX_ACTIVE=true`: Returns decision to allow the tool
 3. If not active: Silent pass-through (no output)
 
-#### Bash Auto-Approve
+**Hook Output Schema**:
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": {
+      "behavior": "allow"
+    }
+  }
+}
+```
 
-**File**: `~/.claude/hooks/appfix-bash-auto-approve.py`
-
-**Purpose**: Auto-approve Bash commands during appfix to enable truly autonomous execution without permission prompts.
-
-**Behavior**:
-1. Receives permission request for `Bash` tool
-2. If appfix state file exists OR `APPFIX_ACTIVE=true` env var: Returns decision to allow
-3. If not active: Silent pass-through (Bash commands require user approval as normal)
-
-**Security model**: Bash auto-approval is ONLY active when appfix mode is detected. Normal sessions require user approval for Bash commands.
-
-#### Configuration
-
+**Configuration**:
 ```json
 "PermissionRequest": [
   {
@@ -621,47 +693,142 @@ The appfix workflow uses two PermissionRequest hooks to enable fully autonomous 
         "timeout": 5
       }
     ]
-  },
+  }
+]
+```
+
+**Why this matters**: Without this hook, Claude would pause at the "Would you like to proceed?" dialog after creating a plan, requiring manual user approval. During `/appfix`, this breaks autonomous execution flow.
+
+### SubagentStop Hook: Validate Agent Output
+
+**File**: `~/.claude/hooks/appfix-subagent-validator.py`
+
+**Purpose**: Validate task agent output before accepting results during appfix to catch incomplete or placeholder responses.
+
+**Behavior**:
+1. Receives subagent completion output
+2. If `APPFIX_ACTIVE=true`: Validates the output meets quality criteria
+3. If validation fails: Blocks with instructions to continue
+4. If not active: Silent pass-through
+
+**Validation Criteria**:
+- Output must be substantive (not too short)
+- No placeholder patterns in verification claims (e.g., `[placeholder]`, `TODO`, `TBD`)
+- URLs must be real app URLs (not just `/health` endpoints)
+- `verification_evidence` values must contain actual content, not empty strings
+
+**Hook Output Schema** (when blocking):
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SubagentStop",
+    "additionalContext": "[validation failure message with instructions]"
+  }
+}
+```
+
+**Configuration**:
+```json
+"SubagentStop": [
   {
-    "matcher": "Bash",
     "hooks": [
       {
         "type": "command",
-        "command": "python3 ~/.claude/hooks/appfix-bash-auto-approve.py",
-        "timeout": 5
+        "command": "python3 ~/.claude/hooks/appfix-subagent-validator.py",
+        "timeout": 10
       }
     ]
   }
 ]
 ```
 
-### Completion Checkpoint
+**Common validation failures**:
+- Agent reports success but doesn't provide concrete evidence
+- Agent includes placeholder URLs instead of actual deployed endpoints
+- Agent claims tests passed but doesn't show actual test output
+- Verification evidence fields are empty or contain only whitespace
 
-Before stopping, appfix must create `.claude/completion-checkpoint.json`:
+### Stop Hook: Completion Validation with Work-Detection Loop
 
+**File**: `~/.claude/hooks/appfix-stop-validator.py`
+
+**Purpose**: Prevent Claude from stopping until the fix-verify loop completes. Uses git-diff work detection to keep Claude working if it made changes but didn't verify them.
+
+**Work-Detection Logic**:
+
+```
+On Stop (APPFIX_ACTIVE=true):
+│
+├─► Load stop-state file (session-specific)
+├─► Compute current git diff hash
+├─► Compare to last saved hash
+│   │
+│   ├─► DIFFERENT (Claude did work)
+│   │   └─► Reset consecutive_no_work_stops = 0
+│   │   └─► Block: "WORK DETECTED - CONTINUE WORKING"
+│   │
+│   └─► SAME (Claude did no work)
+│       └─► Increment consecutive_no_work_stops
+│       │
+│       ├─► If consecutive_no_work_stops >= 2
+│       │   └─► Allow stop (Claude confirmed completion twice)
+│       │
+│       └─► If consecutive_no_work_stops < 2
+│           └─► Block: "COMPLETION CHECK - verify or stop again"
+```
+
+**State File**: `.claude/appfix-stop-state.{session_id}.json`
 ```json
 {
-  "self_report": {
-    "code_changes_made": true,
-    "web_testing_done": true,
-    "deployed": true,
-    "console_errors_checked": true,
-    "is_job_complete": true
-  },
-  "reflection": {
-    "what_was_done": "Fixed CORS, deployed, verified login works",
-    "what_remains": "none"
-  }
+  "last_git_diff_hash": "abc123...",
+  "consecutive_no_work_stops": 0,
+  "last_stop_timestamp": "2026-01-24T12:00:00Z"
 }
 ```
 
-The stop hook validates these booleans:
-- `is_job_complete: false` → BLOCKED
-- `web_testing_done: false` (if code changed) → BLOCKED
-- `deployed: false` (if code changed) → BLOCKED
-- `what_remains` not empty → BLOCKED
+**Blocking Conditions**:
+- Services still unhealthy (from appfix-state.json)
+- Tests haven't passed
+- Work detected since last stop (git diff changed)
+- Less than 2 consecutive no-work stops
+- Missing `verification_evidence` when `tests_passed: true`
 
-**Key insight**: The booleans force honest self-reflection. If you say `false`, you're blocked. If you say `true` dishonestly, that's on you - but you can't accidentally stop early.
+**Allowing Stop**:
+- All services healthy + tests pass + verification evidence present (immediate)
+- Max iterations (5) reached
+- 2 consecutive stop attempts without any git changes (confirms completion)
+
+### Phase 0: Pre-Flight Check
+
+**CRITICAL**: Before any health checks, appfix MUST:
+
+1. Check if `.claude/skills/appfix/references/service-topology.md` exists in the **PROJECT** directory
+2. If missing: STOP and ask user for service URLs, create file, then proceed
+3. **Never** read from `~/.claude/skills/appfix/` (global) - always use project-local path
+
+**Why Two Consecutive Stops?**
+- First no-work stop: Claude might have forgotten something
+- Second no-work stop: Claude confirmed it's genuinely complete
+- Prevents infinite loops while ensuring thorough verification
+
+### Testing the Hooks
+
+```bash
+# Method 1: Test with environment variable
+echo '{"tool_name":"AskUserQuestion","cwd":"/tmp","tool_input":{"questions":[{"question":"Test?","options":[{"label":"Yes"},{"label":"No"}]}]}}' | APPFIX_ACTIVE=true python3 ~/.claude/hooks/appfix-auto-answer.py
+# Expected: JSON with autoAnswers selecting "Yes"
+
+# Method 2: Test with state file (primary detection mechanism)
+mkdir -p /tmp/test-project/.claude
+echo '{"iteration": 1}' > /tmp/test-project/.claude/appfix-state.json
+echo '{"tool_name":"ExitPlanMode","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py
+# Expected: JSON with decision: allow
+
+# Test without appfix active (should pass through)
+rm -rf /tmp/test-project/.claude
+echo '{"tool_name":"ExitPlanMode","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py
+# Expected: No output (pass through)
+```
 
 ---
 

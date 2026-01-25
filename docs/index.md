@@ -28,6 +28,14 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | Document | Description |
 |----------|-------------|
 | [Customization](guides/customization.md) | Create your own commands, skills, hooks |
+| [Appfix Deep Dive](skills/appfix-guide.md) | Comprehensive autonomous debugging guide |
+| [Examples](../examples/README.md) | Standalone prompts and templates |
+
+## Reference
+
+| Document | Description |
+|----------|-------------|
+| [Settings Reference](reference/settings.md) | settings.json configuration options |
 
 ## Available Commands (11)
 
@@ -45,10 +53,11 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | `/designimprove` | Recursive UI design improvement |
 | `/uximprove` | Recursive UX improvement |
 
-## Available Skills (9)
+## Available Skills (10)
 
 | Skill | Triggers On |
 |-------|-------------|
+| `appfix` | "fix the app", autonomous debugging |
 | `async-python-patterns` | asyncio, concurrent programming |
 | `nextjs-tanstack-stack` | Next.js, TanStack, Zustand |
 | `prompt-engineering-patterns` | Prompt optimization |
@@ -59,13 +68,17 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | `ux-improver` | UX usability review |
 | `docs-navigator` | Documentation navigation |
 
-## Active Hooks (3)
+## Active Hooks (7 Event Types)
 
-| Hook | Event | Purpose |
-|------|-------|---------|
-| SessionStart | Session begins | Forces reading of project docs |
-| Stop | Before stopping | Compliance checklist |
-| UserPromptSubmit | Each prompt | Status file updates |
+| Event | Scripts | Purpose |
+|-------|---------|---------|
+| SessionStart | read-docs-reminder.py | Forces reading of project docs |
+| Stop | stop-validator.py, appfix-stop-validator.py | Compliance checklist |
+| PreToolUse | appfix-auto-answer.py | Auto-answer questions (appfix) |
+| PermissionRequest | appfix-exitplan-auto-approve.py | Auto-approve ExitPlanMode (appfix) |
+| PostToolUse | appfix-auto-approve.py | Execution context injection |
+| SubagentStop | appfix-subagent-validator.py | Validate agent output (appfix) |
+| UserPromptSubmit | read-docs-trigger.py | Doc reading triggers |
 
 ## Directory Structure
 
@@ -76,8 +89,8 @@ prompts/
 ├── config/
 │   ├── settings.json      # Hook definitions
 │   ├── commands/          # 11 command specs
-│   ├── hooks/             # Python hook scripts
-│   └── skills/            # 9 skill directories
+│   ├── hooks/             # 10 Python hook scripts
+│   └── skills/            # 10 skill directories
 ├── docs/
 │   ├── index.md           # You are here
 │   ├── architecture.md    # System design

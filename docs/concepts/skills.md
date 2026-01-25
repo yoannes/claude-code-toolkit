@@ -53,15 +53,18 @@ Skills are markdown files that Claude Code automatically loads when it detects r
 
 ## Installing Skills
 
-### Via skills-installer (Recommended)
+### Via Toolkit Installer (Recommended)
+
+If you're using the Claude Code Toolkit:
 
 ```bash
-# Install from registry
-npx skills-installer install @wshobson/agents/prompt-engineering-patterns --client claude-code
-npx skills-installer install @anthropics/skills/webapp-testing --client claude-code
-
-# Installs to ~/.claude/skills/<skill-name>/
+cd prompts && ./scripts/install.sh
 ```
+
+This script:
+1. Backs up existing `~/.claude` configuration
+2. Creates symlinks to toolkit commands, skills, and hooks
+3. Configures settings.json with proper hook definitions
 
 ### Manual Installation
 

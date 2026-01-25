@@ -13,12 +13,13 @@ Exit codes:
   0 - Allow stop
   2 - Block stop (stderr shown to Claude)
 """
+import hashlib
 import json
 import os
 import sys
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 # Debug logging
@@ -79,6 +80,52 @@ def has_frontend_changes(files: list[str]) -> bool:
     return False
 
 
+def get_code_version(cwd: str = "") -> str:
+    """
+    Get current code version (git HEAD + dirty state hash).
+
+    Excludes .claude/ from dirty calculation to prevent checkpoint file
+    from creating a self-referential dirty state (chicken-and-egg problem).
+
+    Returns format:
+    - "abc1234" - clean commit
+    - "abc1234-dirty-def5678" - commit with uncommitted changes
+    - "unknown" - not a git repo
+    """
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        head_hash = head.stdout.strip()
+        if not head_hash:
+            return "unknown"
+
+        diff = subprocess.run(
+            ["git", "diff", "HEAD", "--", ":(exclude).claude/"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        if diff.stdout:
+            dirty_hash = hashlib.sha1(diff.stdout.encode()).hexdigest()[:7]
+            return f"{head_hash}-dirty-{dirty_hash}"
+
+        return head_hash
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return "unknown"
+
+
+# Fields that are invalidated when code changes after they were set
+VERSION_DEPENDENT_FIELDS = [
+    "deployed",
+    "linters_pass",
+    "web_testing_done",
+    "console_errors_checked",
+    "api_testing_done",
+]
+
+
 def load_checkpoint(cwd: str) -> dict | None:
     """Load completion checkpoint file."""
     if not cwd:
@@ -92,7 +139,15 @@ def load_checkpoint(cwd: str) -> dict | None:
         return None
 
 
-def validate_checkpoint(checkpoint: dict, modified_files: list[str]) -> tuple[bool, list[str]]:
+def is_appfix_mode(cwd: str) -> bool:
+    """Check if appfix mode is active (appfix-state.json exists)."""
+    if not cwd:
+        return False
+    state_path = Path(cwd) / ".claude" / "appfix-state.json"
+    return state_path.exists()
+
+
+def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = "") -> tuple[bool, list[str]]:
     """
     Validate checkpoint booleans deterministically.
 
@@ -101,6 +156,23 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str]) -> tuple[bo
     failures = []
     report = checkpoint.get("self_report", {})
     reflection = checkpoint.get("reflection", {})
+
+    # Check version-dependent fields for staleness
+    current_version = get_code_version(cwd)
+    for field in VERSION_DEPENDENT_FIELDS:
+        if report.get(field, False):
+            field_version = report.get(f"{field}_at_version", "")
+            if field_version and field_version != current_version:
+                failures.append(
+                    f"{field} is STALE - set at version '{field_version}', "
+                    f"but code is now at '{current_version}'. "
+                    f"Code changed since this checkpoint was set. Re-run and update."
+                )
+            elif not field_version and current_version != "unknown":
+                failures.append(
+                    f"{field} is true but missing {field}_at_version. "
+                    f"Add '{field}_at_version': '{current_version}' to checkpoint."
+                )
 
     # Check: is_job_complete must be true
     if not report.get("is_job_complete", False):
@@ -127,6 +199,37 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str]) -> tuple[bo
         if has_frontend and not report.get("console_errors_checked", False):
             failures.append("console_errors_checked is false - check browser console for errors")
 
+        # Check: linters_pass required if code was changed
+        if not report.get("linters_pass", False):
+            failures.append(
+                "linters_pass is false - run linters and fix ALL errors (including pre-existing ones). "
+                "You cannot claim 'these errors aren't related to our code' - fix them ALL"
+            )
+
+        # Check: preexisting_issues_fixed - no excuses allowed
+        if report.get("linters_pass", False) and not report.get("preexisting_issues_fixed", True):
+            # Only check if linters_pass is claimed but preexisting marked false
+            failures.append(
+                "preexisting_issues_fixed is false - you acknowledged pre-existing issues but didn't fix them. "
+                "POLICY: Fix ALL linter errors, no exceptions. 'Not my code' is not an excuse."
+            )
+
+    # Check: docs_read_at_start required for appfix mode
+    if is_appfix_mode(cwd):
+        if not report.get("docs_read_at_start", False):
+            failures.append(
+                "docs_read_at_start is false - you must read docs/index.md and TECHNICAL_OVERVIEW.md "
+                "before starting appfix work"
+            )
+
+    # Check: infra PR required if az CLI changes were made
+    if report.get("az_cli_changes_made", False):
+        if not report.get("infra_pr_created", False):
+            failures.append(
+                "infra_pr_created is false - you made infrastructure changes with az CLI but didn't "
+                "create a PR to the infra repo. Sync your changes with IaC files."
+            )
+
     # Check: what_remains should be empty or "none"
     what_remains = reflection.get("what_remains", "")
     if what_remains and what_remains.lower() not in ["none", "nothing", "n/a", ""]:
@@ -139,6 +242,10 @@ def block_no_checkpoint(cwd: str) -> None:
     """Block stop - no checkpoint file exists."""
     checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json" if cwd else ".claude/completion-checkpoint.json"
 
+    # Get current version for display
+    current_version = get_code_version(cwd)
+    version_note = f"// Current version: {current_version}" if current_version != "unknown" else ""
+
     print(f"""
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║  ❌ COMPLETION CHECKPOINT REQUIRED                                            ║
@@ -150,24 +257,40 @@ This file requires HONEST self-reporting of what you've done:
 
 {{
   "self_report": {{
-    "code_changes_made": true,       // Did you modify any code files?
-    "web_testing_done": false,       // Did you verify in browser/Surf?
-    "api_testing_done": false,       // Did you test API endpoints?
-    "deployed": false,               // Did you deploy the changes?
-    "console_errors_checked": false, // Did you check browser console?
-    "docs_updated": false,           // Did you update relevant docs?
-    "is_job_complete": false         // Is the job ACTUALLY done?
+    "code_changes_made": true,              // Did you modify any code files?
+    "web_testing_done": false,              // Did you verify in browser/Surf?
+    "web_testing_done_at_version": "",      // Version when web testing was done {version_note}
+    "api_testing_done": false,              // Did you test API endpoints?
+    "api_testing_done_at_version": "",      // Version when API testing was done
+    "deployed": false,                      // Did you deploy the changes?
+    "deployed_at_version": "",              // Version when deployed
+    "console_errors_checked": false,        // Did you check browser console?
+    "console_errors_checked_at_version": "",// Version when console was checked
+    "linters_pass": false,                  // Did all linters pass with zero errors?
+    "linters_pass_at_version": "",          // Version when linters passed
+    "docs_updated": false,                  // Did you update relevant docs?
+    "docs_read_at_start": false,            // Did you read project docs first? (appfix)
+    "preexisting_issues_fixed": true,       // Did you fix ALL issues (no "not my code")?
+    "az_cli_changes_made": false,           // Did you run az CLI infrastructure commands?
+    "infra_pr_created": false,              // Did you create PR to infra repo? (if az CLI used)
+    "is_job_complete": false                // Is the job ACTUALLY done?
   }},
   "reflection": {{
-    "what_was_done": "...",          // Honest summary of work completed
-    "what_remains": "none",          // Must be empty to allow stop
-    "blockers": null                 // Any genuine blockers
+    "what_was_done": "...",                 // Honest summary of work completed
+    "what_remains": "none",                 // Must be empty to allow stop
+    "blockers": null                        // Any genuine blockers
   }},
   "evidence": {{
-    "urls_tested": [],               // URLs you actually tested
-    "console_clean": false           // Was browser console clean?
+    "urls_tested": [],                      // URLs you actually tested
+    "console_clean": false                  // Was browser console clean?
   }}
 }}
+
+VERSION TRACKING:
+- Version-dependent fields (deployed, linters_pass, web_testing_done, etc.)
+  must include a matching *_at_version field with the git commit hash
+- If you make code changes AFTER setting a checkpoint, it becomes STALE
+- Get current version: git rev-parse --short HEAD
 
 DOCUMENTATION REQUIREMENTS (docs_updated):
 - docs/TECHNICAL_OVERVIEW.md - Update for architectural changes
@@ -183,9 +306,13 @@ Create this file, answer honestly, then stop again.
     sys.exit(2)
 
 
-def block_with_continuation(failures: list[str]) -> None:
+def block_with_continuation(failures: list[str], cwd: str = "") -> None:
     """Block stop with specific continuation instructions."""
     failure_list = "\n".join(f"  • {f}" for f in failures)
+
+    # Get current version for guidance
+    current_version = get_code_version(cwd)
+    version_info = f"Current version: {current_version}" if current_version != "unknown" else "Run: git rev-parse --short HEAD"
 
     print(f"""
 ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -200,14 +327,40 @@ Your self-report indicates incomplete work:
 REQUIRED ACTION: Complete the remaining work.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+If a checkpoint is marked "STALE":
+  → The code changed since that checkpoint was set
+  → Re-run that step (deploy, test, lint, etc.) with the current code
+  → {version_info}
+  → Update checkpoint: "field": true, "field_at_version": "<version>"
+
 If web_testing_done is false:
   → Run /webtest or use Chrome MCP to verify in browser
   → Check browser console for errors
-  → Update checkpoint with results
+  → Update checkpoint with results and version
 
 If deployed is false (and code was changed):
   → Commit and push: git add <files> && git commit -m "fix: ..." && git push
   → Deploy: gh workflow run deploy.yml && gh run watch --exit-status
+  → Update checkpoint: deployed: true, deployed_at_version: "<version>"
+
+If linters_pass is false:
+  → Auto-detect linters: package.json → npm run lint / eslint
+                         pyproject.toml → ruff check --fix
+                         tsconfig.json → tsc --noEmit
+  → Fix ALL errors - including pre-existing ones
+  → "These errors aren't related to our code" is NOT acceptable
+  → Update checkpoint: linters_pass: true, linters_pass_at_version: "<version>"
+
+If docs_read_at_start is false (appfix mode):
+  → Read docs/index.md and docs/TECHNICAL_OVERVIEW.md
+  → Update checkpoint: docs_read_at_start: true
+
+If infra_pr_created is false (but az_cli_changes_made is true):
+  → Document az CLI changes in .claude/infra-changes.md
+  → Clone infra repo (see service-topology.md for location)
+  → Update Terraform/Bicep/ARM templates to match
+  → Create PR: gh pr create --title "Sync infra changes from appfix"
+  → Update checkpoint: infra_pr_created: true
 
 If is_job_complete is false:
   → You honestly answered that the job isn't done
@@ -226,6 +379,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     Determine if this session requires a completion checkpoint.
 
     Checkpoint required when:
+    - Appfix mode is active (appfix-state.json exists)
     - Code files were modified
     - A plan file exists for this project
 
@@ -233,6 +387,11 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     - Research/exploration sessions (no code changes)
     - Simple file reads, documentation queries
     """
+    # CRITICAL: If appfix mode active, checkpoint is ALWAYS required
+    # This ensures infrastructure-only changes (az CLI) are validated
+    if is_appfix_mode(cwd):
+        return True
+
     # If code files modified, checkpoint required
     if has_code_changes(modified_files):
         return True
@@ -273,7 +432,6 @@ def main():
     log_debug("Parsed successfully", parsed_data=input_data)
 
     cwd = input_data.get("cwd", "")
-    session_id = input_data.get("session_id", "")
     stop_hook_active = input_data.get("stop_hook_active", False)
 
     # Get modified files
@@ -296,10 +454,10 @@ def main():
             block_no_checkpoint(cwd)
 
         # Checkpoint exists but first stop - validate and block with checklist
-        is_valid, failures = validate_checkpoint(checkpoint, modified_files)
+        is_valid, failures = validate_checkpoint(checkpoint, modified_files, cwd)
         if not is_valid:
             log_debug("BLOCKING STOP: checkpoint validation failed", parsed_data={"failures": failures})
-            block_with_continuation(failures)
+            block_with_continuation(failures, cwd)
 
         # Checkpoint valid - allow stop on first try if everything is complete
         log_debug("ALLOWING STOP: checkpoint valid on first stop")
@@ -312,10 +470,10 @@ def main():
         log_debug("BLOCKING STOP: second stop but checkpoint file still missing")
         block_no_checkpoint(cwd)
 
-    is_valid, failures = validate_checkpoint(checkpoint, modified_files)
+    is_valid, failures = validate_checkpoint(checkpoint, modified_files, cwd)
     if not is_valid:
         log_debug("BLOCKING STOP: second stop but checkpoint still invalid", parsed_data={"failures": failures})
-        block_with_continuation(failures)
+        block_with_continuation(failures, cwd)
 
     # All checks pass
     log_debug("ALLOWING STOP: checkpoint valid", parsed_data={"checkpoint": checkpoint})
