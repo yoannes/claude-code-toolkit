@@ -10,6 +10,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 ~/.claude/hooks/session-snapshot.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "python3 ~/.claude/hooks/read-docs-reminder.py",
             "timeout": 5
           }
@@ -18,6 +23,11 @@
       {
         "matcher": "compact",
         "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/session-snapshot.py",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/read-docs-reminder.py",
@@ -68,6 +78,30 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/plan-execution-reminder.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "Edit"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/checkpoint-invalidator.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "Write"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/checkpoint-invalidator.py",
             "timeout": 5
           }
         ]

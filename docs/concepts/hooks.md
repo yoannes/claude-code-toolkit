@@ -118,6 +118,11 @@ Location: `~/.claude/settings.json`
         "hooks": [
           {
             "type": "command",
+            "command": "python3 ~/.claude/hooks/session-snapshot.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "python3 ~/.claude/hooks/read-docs-reminder.py",
             "timeout": 5
           }
@@ -139,7 +144,30 @@ Location: `~/.claude/settings.json`
 }
 ```
 
-### SessionStart Hook
+### SessionStart Hook: Session Snapshot
+
+**File**: `~/.claude/hooks/session-snapshot.py`
+
+**Purpose**: Captures a snapshot of the git diff state at session start to enable session-specific change detection.
+
+**Why this exists**: Without this, the stop hook would require checkpoints for ANY uncommitted changes, even pre-existing ones from previous sessions. This caused a loop where research-only sessions were blocked because they inherited uncommitted changes.
+
+**How it works**:
+1. At session start, computes SHA1 hash of `git diff HEAD -- ":(exclude).claude/"`
+2. Saves hash to `.claude/session-snapshot.json`
+3. Stop hook compares current hash against saved hash
+4. If hashes match → session made no code changes → no checkpoint required
+5. If hashes differ → session modified code → checkpoint required
+
+**State file**: `.claude/session-snapshot.json`
+```json
+{
+  "diff_hash_at_start": "a1b2c3d4e5f6",
+  "session_started_at": "2026-01-25T10:30:00"
+}
+```
+
+### SessionStart Hook: Read Docs Reminder
 
 Forces Claude to read project documentation before executing any user request. Uses echo with exit code 0 (context injection, non-blocking).
 
@@ -148,6 +176,55 @@ Forces Claude to read project documentation before executing any user request. U
 - `DO NOT skip` - explicit prohibition
 - `Actually READ the files` - prevents "I'll summarize from memory" shortcuts
 - `The user expects...` - frames as user requirement, not system preference
+
+### PostToolUse Hook: Checkpoint Invalidator
+
+**File**: `~/.claude/hooks/checkpoint-invalidator.py`
+
+**Purpose**: Proactively resets stale checkpoint flags immediately after code edits, preventing Claude from working with outdated state.
+
+**Problem this solves**:
+1. Deploy at version A → checkpoint: `deployed=true`
+2. Test finds error → Claude writes fix → version becomes B
+3. WITHOUT this hook: Claude sees `deployed=true`, skips re-deploy
+4. WITH this hook: `deployed` is reset to `false` immediately after edit
+
+**Dependency Graph**:
+```
+linters_pass
+     ↓
+  deployed
+     ↓
+┌────┴────┐
+↓         ↓
+web_testing_done
+console_errors_checked
+api_testing_done
+```
+
+When a field becomes stale, all dependent fields are also invalidated:
+- If `linters_pass` is stale → `deployed` is also stale
+- If `deployed` is stale → `web_testing_done`, `console_errors_checked`, `api_testing_done` are also stale
+
+**Trigger**: Fires after every `Edit` or `Write` tool use on code files (`.py`, `.ts`, `.tsx`, `.js`, `.jsx`, etc.)
+
+**Output**: Injects a warning message listing invalidated fields:
+```
+⚠️ CODE CHANGE DETECTED - Checkpoint fields invalidated: deployed, web_testing_done
+
+You edited: src/auth.py
+Current version: abc1234-dirty-xyz5678
+
+These fields were reset to false because the code changed since they were set:
+  • deployed: now requires re-verification
+  • web_testing_done: now requires re-verification
+
+Before stopping, you must:
+1. Re-run linters (if linters_pass was reset)
+2. Re-deploy (if deployed was reset)
+3. Re-test in browser (if web_testing_done was reset)
+4. Update checkpoint with new version
+```
 
 ### Stop Hook (Blocking)
 

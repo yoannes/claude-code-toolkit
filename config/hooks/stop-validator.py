@@ -80,6 +80,24 @@ def has_frontend_changes(files: list[str]) -> bool:
     return False
 
 
+def get_diff_hash(cwd: str = "") -> str:
+    """
+    Get hash of current git diff (excluding .claude/).
+
+    Used to detect if THIS session made changes by comparing against
+    the snapshot taken at session start.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--", ":(exclude).claude/"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        return hashlib.sha1(result.stdout.encode()).hexdigest()[:12]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return "unknown"
+
+
 def get_code_version(cwd: str = "") -> str:
     """
     Get current code version (git HEAD + dirty state hash).
@@ -117,13 +135,24 @@ def get_code_version(cwd: str = "") -> str:
 
 
 # Fields that are invalidated when code changes after they were set
+# Ordered by dependency: upstream fields come first
 VERSION_DEPENDENT_FIELDS = [
-    "deployed",
-    "linters_pass",
-    "web_testing_done",
-    "console_errors_checked",
-    "api_testing_done",
+    "linters_pass",        # Must pass before deploy
+    "deployed",            # Must deploy before testing
+    "web_testing_done",    # Depends on deployed
+    "console_errors_checked",  # Depends on deployed
+    "api_testing_done",    # Depends on deployed
 ]
+
+# Dependency graph: field -> list of fields it depends on
+# If a dependency is stale, this field is also stale
+FIELD_DEPENDENCIES = {
+    "linters_pass": [],                          # Base field, only depends on code
+    "deployed": ["linters_pass"],                # Can't deploy unlinted code
+    "web_testing_done": ["deployed"],            # Can't test undeployed code
+    "console_errors_checked": ["deployed"],      # Can't check console of undeployed code
+    "api_testing_done": ["deployed"],            # Can't test APIs of undeployed code
+}
 
 
 def load_checkpoint(cwd: str) -> dict | None:
@@ -139,6 +168,18 @@ def load_checkpoint(cwd: str) -> dict | None:
         return None
 
 
+def save_checkpoint(cwd: str, checkpoint: dict) -> bool:
+    """Save checkpoint file back to disk."""
+    if not cwd:
+        return False
+    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json"
+    try:
+        checkpoint_path.write_text(json.dumps(checkpoint, indent=2))
+        return True
+    except IOError:
+        return False
+
+
 def is_appfix_mode(cwd: str) -> bool:
     """Check if appfix mode is active (appfix-state.json exists)."""
     if not cwd:
@@ -147,32 +188,79 @@ def is_appfix_mode(cwd: str) -> bool:
     return state_path.exists()
 
 
+def get_dependent_fields(field: str) -> list[str]:
+    """
+    Get all fields that depend on a given field (transitively).
+    If field X is stale, all fields that depend on X are also stale.
+    """
+    dependents = []
+    for f, deps in FIELD_DEPENDENCIES.items():
+        if field in deps:
+            dependents.append(f)
+            # Recursively get fields that depend on this dependent
+            dependents.extend(get_dependent_fields(f))
+    return list(set(dependents))
+
+
 def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = "") -> tuple[bool, list[str]]:
     """
     Validate checkpoint booleans deterministically.
+
+    Auto-resets stale version-dependent fields and cascades to dependents.
+    Writes checkpoint back to disk after modifications.
 
     Returns (is_valid, list_of_failures)
     """
     failures = []
     report = checkpoint.get("self_report", {})
     reflection = checkpoint.get("reflection", {})
+    checkpoint_modified = False  # Track if we need to save
+    fields_to_reset = set()  # Track all fields that need resetting
 
-    # Check version-dependent fields for staleness
+    # Phase 1: Identify stale fields based on version mismatch
     current_version = get_code_version(cwd)
     for field in VERSION_DEPENDENT_FIELDS:
         if report.get(field, False):
             field_version = report.get(f"{field}_at_version", "")
             if field_version and field_version != current_version:
+                fields_to_reset.add(field)
                 failures.append(
                     f"{field} is STALE - set at version '{field_version}', "
-                    f"but code is now at '{current_version}'. "
-                    f"Code changed since this checkpoint was set. Re-run and update."
+                    f"but code is now at '{current_version}'. Code changed since this checkpoint was set. Re-run and update."
                 )
             elif not field_version and current_version != "unknown":
+                fields_to_reset.add(field)
                 failures.append(
-                    f"{field} is true but missing {field}_at_version. "
-                    f"Add '{field}_at_version': '{current_version}' to checkpoint."
+                    f"{field} is true but missing version tracking - "
+                    f"Re-do and include {field}_at_version."
                 )
+
+    # Phase 2: Cascade to dependent fields
+    # If linters_pass is stale, deployed is also stale (can't deploy unlinted code)
+    # If deployed is stale, web_testing_done is also stale (can't test undeployed code)
+    cascade_fields = set()
+    for stale_field in fields_to_reset:
+        dependents = get_dependent_fields(stale_field)
+        for dep in dependents:
+            if report.get(dep, False) and dep not in fields_to_reset:
+                cascade_fields.add(dep)
+                failures.append(
+                    f"{dep} CASCADE INVALIDATED - depends on {stale_field} which is stale. "
+                    f"Re-do after fixing upstream."
+                )
+
+    fields_to_reset.update(cascade_fields)
+
+    # Phase 3: Reset all identified stale fields
+    for field in fields_to_reset:
+        if report.get(field, False):
+            report[field] = False
+            report[f"{field}_at_version"] = ""
+            checkpoint_modified = True
+
+    # Save modified checkpoint back to disk
+    if checkpoint_modified:
+        save_checkpoint(cwd, checkpoint)
 
     # Check: is_job_complete must be true
     if not report.get("is_job_complete", False):
@@ -220,6 +308,30 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = 
             failures.append(
                 "docs_read_at_start is false - you must read docs/index.md and TECHNICAL_OVERVIEW.md "
                 "before starting appfix work"
+            )
+
+    # Check: In appfix mode, browser verification is ALWAYS required
+    # (regardless of code_changes_made - infra fixes need verification too)
+    if is_appfix_mode(cwd):
+        if not report.get("web_testing_done", False):
+            failures.append(
+                "web_testing_done is false - appfix requires browser verification "
+                "even for infrastructure-only changes. Use Chrome MCP or /webtest."
+            )
+        if not report.get("console_errors_checked", False):
+            failures.append(
+                "console_errors_checked is false - appfix requires checking browser "
+                "console for errors. Use read_console_messages tool."
+            )
+        # Check: urls_tested must have actual URLs when web_testing_done is true
+        evidence = checkpoint.get("evidence", {})
+        urls_tested = evidence.get("urls_tested", [])
+        if report.get("web_testing_done", False) and not urls_tested:
+            failures.append(
+                "web_testing_done is true but evidence.urls_tested is empty - "
+                "you must actually navigate to the app via Chrome MCP and record the URLs tested. "
+                "Database-only or infrastructure-only sessions still require browser verification "
+                "to confirm the fix worked."
             )
 
     # Check: infra PR required if az CLI changes were made
@@ -374,17 +486,52 @@ Update .claude/completion-checkpoint.json, then stop again.
     sys.exit(2)
 
 
+def session_made_code_changes(cwd: str) -> bool:
+    """
+    Check if THIS session made code changes (not pre-existing changes).
+
+    Compares the current diff hash against the snapshot taken at session start.
+    This prevents research-only sessions from being blocked by pre-existing
+    uncommitted changes from previous sessions.
+
+    Falls back to git diff check if no snapshot exists (old session format).
+    """
+    snapshot_path = Path(cwd) / ".claude" / "session-snapshot.json"
+    if not snapshot_path.exists():
+        # No snapshot = old session format, fall back to git diff check
+        return has_code_changes(get_git_diff_files())
+
+    try:
+        snapshot = json.loads(snapshot_path.read_text())
+        start_hash = snapshot.get("diff_hash_at_start", "")
+    except (json.JSONDecodeError, IOError):
+        return has_code_changes(get_git_diff_files())
+
+    if not start_hash or start_hash == "unknown":
+        # Invalid snapshot, fall back to git diff check
+        return has_code_changes(get_git_diff_files())
+
+    current_hash = get_diff_hash(cwd)
+    if current_hash == "unknown":
+        # Can't determine current state, fall back to git diff check
+        return has_code_changes(get_git_diff_files())
+
+    # True if diff changed during this session
+    return start_hash != current_hash
+
+
 def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     """
     Determine if this session requires a completion checkpoint.
 
     Checkpoint required when:
     - Appfix mode is active (appfix-state.json exists)
-    - Code files were modified
+    - THIS SESSION made code changes (diff hash changed since session start)
     - A plan file exists for this project
 
     Checkpoint skipped for:
-    - Research/exploration sessions (no code changes)
+    - Research/exploration sessions (no code changes in THIS session)
+    - Sessions with only pre-existing uncommitted changes from previous sessions
     - Simple file reads, documentation queries
     """
     # CRITICAL: If appfix mode active, checkpoint is ALWAYS required
@@ -392,8 +539,9 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     if is_appfix_mode(cwd):
         return True
 
-    # If code files modified, checkpoint required
-    if has_code_changes(modified_files):
+    # Check if THIS SESSION made code changes (not pre-existing changes)
+    # This is the key fix: don't block sessions that inherited uncommitted changes
+    if session_made_code_changes(cwd):
         return True
 
     # If plan file exists in ~/.claude/plans/, checkpoint required
