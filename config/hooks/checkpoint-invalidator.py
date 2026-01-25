@@ -23,8 +23,16 @@ from pathlib import Path
 
 # Code file extensions that trigger checkpoint invalidation
 CODE_EXTENSIONS = {
+    # Application code
     '.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs',
-    '.java', '.rb', '.php', '.vue', '.svelte'
+    '.java', '.rb', '.php', '.vue', '.svelte',
+    # Infrastructure as Code
+    '.tf', '.tfvars',       # Terraform
+    '.bicep',               # Azure Bicep
+    '.yaml', '.yml',        # K8s, CI/CD, CloudFormation
+    # Database and scripts
+    '.sql',                 # Database migrations/changes
+    '.sh', '.bash',         # Shell scripts
 }
 
 # Files/patterns excluded from version tracking (dirty calculation)

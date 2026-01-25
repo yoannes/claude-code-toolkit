@@ -208,12 +208,28 @@ def save_checkpoint(cwd: str, checkpoint: dict) -> bool:
         return False
 
 
-def is_appfix_mode(cwd: str) -> bool:
-    """Check if appfix mode is active (appfix-state.json exists)."""
-    if not cwd:
-        return False
-    state_path = Path(cwd) / ".claude" / "appfix-state.json"
-    return state_path.exists()
+def is_appfix_mode(cwd: str = "") -> bool:
+    """
+    Check if appfix mode is active.
+
+    Checks user-level state first (~/.claude/appfix-state.json) to handle
+    cross-repo scenarios where appfix was started in one repo but work
+    is being done in another (e.g., Terraform infra repo).
+
+    Falls back to project-level state for backward compatibility.
+    """
+    # User-level state takes precedence (cross-repo compatible)
+    user_state = Path.home() / ".claude" / "appfix-state.json"
+    if user_state.exists():
+        return True
+
+    # Fall back to project-level state (backward compatibility)
+    if cwd:
+        project_state = Path(cwd) / ".claude" / "appfix-state.json"
+        if project_state.exists():
+            return True
+
+    return False
 
 
 def get_dependent_fields(field: str) -> list[str]:
