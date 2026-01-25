@@ -54,18 +54,6 @@
         ]
       }
     ],
-    "PermissionRequest": [
-      {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": {
@@ -75,6 +63,11 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/plan-execution-reminder.py",
             "timeout": 5
           }
         ]
@@ -102,25 +95,13 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/plan-execution-reminder.py",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "PermissionRequest": [
       {
         "matcher": "ExitPlanMode",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py",
+            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
             "timeout": 5
           }
         ]
@@ -130,7 +111,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-bash-auto-approve.py",
+            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
             "timeout": 5
           }
         ]
