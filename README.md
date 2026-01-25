@@ -1,227 +1,325 @@
 # Claude Code Toolkit
 
-> Production-ready commands, skills, and hooks to supercharge your Claude Code workflow.
+> Autonomous debugging that actually works. Fix your app with `/appfix`.
 
-Claude Code supports three extension mechanisms that let you customize how Claude works with your codebase:
+## The Problem
 
-| Mechanism | Trigger | Purpose |
-|-----------|---------|---------|
-| **Commands** | `/command-name` | Slash-invoked structured workflows |
-| **Skills** | Automatic (keyword match) | Domain expertise Claude draws on |
-| **Hooks** | Lifecycle events | Inject context, enforce behavior |
+When production breaks at 2 AM, you don't want an AI that asks "Should I check the logs?" You want one that:
 
-This toolkit provides a battle-tested collection of all three, built around the philosophy of **"boring over clever"** — explicit, maintainable, effective.
+1. Checks the logs
+2. Finds the root cause
+3. Fixes the code
+4. Deploys the fix
+5. Verifies it works in the browser
+6. **Doesn't stop until it's actually done**
+
+That's what `/appfix` does.
 
 ## Quick Start
 
 ```bash
-# Clone
+# Install
 git clone https://github.com/Motium-AI/claude-code-toolkit.git
-cd claude-code-toolkit
+cd claude-code-toolkit && ./scripts/install.sh
 
-# Install (backs up existing config, creates symlinks)
-./scripts/install.sh
-
-# Verify - start Claude Code
+# Fix your app
 claude
-# You should see: "SessionStart:startup hook success: MANDATORY..."
-
-# Try a command
-/QA   # Runs exhaustive codebase audit
+> /appfix
 ```
 
-For detailed setup instructions, see [QUICKSTART.md](QUICKSTART.md).
+Claude will autonomously debug, fix, deploy, and verify your application.
 
-## What's Included
+---
 
-### Commands (11)
+## How /appfix Works
 
-Slash commands for structured workflows. Run `/command-name` to invoke.
-
-| Command | Purpose |
-|---------|---------|
-| `/QA` | Exhaustive architecture, scalability, and maintainability audit |
-| `/deslop` | Detect and remove 25 patterns of AI-generated code slop |
-| `/docupdate` | Documentation gap analysis and staleness detection |
-| `/webtest` | Browser automation testing via Chrome integration |
-| `/interview` | Clarify requirements before implementation via Q&A |
-| `/weboptimizer` | Performance benchmarking for Next.js + FastAPI apps |
-| `/config-audit` | Environment variable analysis and fallback pattern detection |
-| `/mobiletest` | Run Maestro E2E tests with failure diagnosis and fix suggestions |
-| `/mobileaudit` | Vision-based UI/design audit via Maestro screenshots |
-| `/designimprove` | Recursively improve web UI via screenshot grading and targeted fixes |
-| `/uximprove` | Recursively improve UX via usability analysis and targeted fixes |
-
-### Skills (10)
-
-Domain expertise Claude automatically applies when relevant keywords appear in your prompts.
-
-| Skill | Triggers On |
-|-------|-------------|
-| `appfix` | "fix the app", "/appfix", autonomous debugging |
-| `async-python-patterns` | asyncio, concurrent programming, async/await |
-| `nextjs-tanstack-stack` | Next.js App Router, TanStack Table/Query/Form, Zustand |
-| `prompt-engineering-patterns` | Prompt optimization, few-shot learning, chain-of-thought |
-| `frontend-design` | Web UI development, distinctive design |
-| `webapp-testing` | Browser testing, Chrome automation, Playwright |
-| `ux-designer` | UX flows, wireframes, WCAG accessibility |
-| `design-improver` | UI design review, screenshot grading, design audit |
-| `ux-improver` | UX usability review, user flows, affordances, feedback states |
-| `docs-navigator` | Read the docs, check documentation, unfamiliar codebase |
-
-### Hooks (6 scripts across 5 event types)
-
-Lifecycle handlers that run automatically at key moments.
-
-| Event | Scripts | Purpose |
-|-------|---------|---------|
-| SessionStart | read-docs-reminder.py | Forces Claude to read project docs before starting |
-| Stop | stop-validator.py | Completion checkpoint validation |
-| UserPromptSubmit | read-docs-trigger.py | Suggests relevant docs based on keywords |
-| PostToolUse | plan-execution-reminder.py | Injects autonomous execution context after plan approval |
-| PermissionRequest | appfix-exitplan-auto-approve.py | Auto-approves ExitPlanMode during appfix |
-| PermissionRequest | appfix-bash-auto-approve.py | Auto-approves Bash commands during appfix |
-
-> **Note:** Additional hook `skill-reminder.py` exists in `config/hooks/` but is not enabled by default. See [docs/concepts/hooks.md](docs/concepts/hooks.md) for configuration.
-
-## How It Works
+### The Fix-Verify Loop
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         Claude Code Session                              │
+│  /appfix                                                                 │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  1. SESSION START                                                        │
-│     └─→ SessionStart hook fires                                          │
-│         └─→ Forces Claude to read docs/index.md, CLAUDE.md, MEMORIES.md, │
-│             TECHNICAL_OVERVIEW.md                                        │
+│  1. HEALTH CHECK                                                         │
+│     └─► Check all services (frontend, backend, workers)                 │
+│     └─► Run browser tests via Chrome MCP                                │
 │                                                                          │
-│  2. USER SENDS PROMPT                                                    │
-│     └─→ UserPromptSubmit hook fires                                      │
-│         └─→ read-docs-trigger.py suggests reading relevant docs          │
+│  2. IF FAILURES DETECTED:                                                │
+│     a. COLLECT LOGS                                                      │
+│        └─► Browser console, Azure Container logs, LogFire               │
 │                                                                          │
-│  3. USER RUNS /COMMAND                                                   │
-│     └─→ Command markdown loaded                                          │
-│         └─→ Structured workflow executes (plan mode, parallel agents)    │
-│             └─→ Formatted output generated                               │
+│     b. DIAGNOSE                                                          │
+│        └─► Root cause analysis, create fix plan                         │
 │                                                                          │
-│  4. CLAUDE EXITS PLAN MODE                                               │
-│     └─→ PostToolUse (ExitPlanMode) hook fires                            │
-│         └─→ plan-execution-reminder.py outputs execution context         │
-│             └─→ Prompts Claude to begin autonomous implementation        │
+│     c. FIX                                                               │
+│        └─► Apply code changes                                           │
+│        └─► git commit && git push                                       │
+│        └─► gh workflow run && gh run watch --exit-status                │
 │                                                                          │
-│  5. CLAUDE TRIES TO STOP                                                 │
-│     └─→ Stop hook fires                                                  │
-│         └─→ stop-validator.py validates completion checkpoint            │
-│             └─→ Checks: is_job_complete, web_testing_done, deployed...   │
-│                 └─→ Blocks until checkpoint booleans pass                │
+│     d. VERIFY                                                            │
+│        └─► Test in browser (Chrome MCP)                                 │
+│        └─► Check console is clean                                       │
+│                                                                          │
+│  3. LOOP until all services healthy + verified in browser               │
+│                                                                          │
+│  4. TRY TO STOP → Stop hook validates completion checkpoint             │
+│     └─► is_job_complete: false? → BLOCKED, continue working            │
+│     └─► web_testing_done: false? → BLOCKED, continue working           │
+│     └─► All checks pass? → Done                                         │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Documentation
+### Truly Autonomous Execution
 
-| Document | Description |
-|----------|-------------|
-| [QUICKSTART.md](QUICKSTART.md) | 5-minute setup guide |
-| [docs/concepts/commands.md](docs/concepts/commands.md) | Deep dive into commands |
-| [docs/concepts/skills.md](docs/concepts/skills.md) | Deep dive into skills |
-| [docs/concepts/hooks.md](docs/concepts/hooks.md) | Deep dive into hooks |
-| [docs/architecture.md](docs/architecture.md) | How everything fits together |
-| [docs/guides/customization.md](docs/guides/customization.md) | Create your own commands, skills, hooks |
+The key innovation: **Claude cannot stop until the job is actually done.**
+
+The stop hook checks a completion checkpoint with boolean self-reports:
+
+```json
+{
+  "self_report": {
+    "is_job_complete": true,
+    "web_testing_done": true,
+    "deployed": true,
+    "console_errors_checked": true
+  },
+  "reflection": {
+    "what_was_done": "Fixed CORS config, deployed, verified login works",
+    "what_remains": "none"
+  }
+}
+```
+
+If `is_job_complete: false`, Claude is blocked and must continue working. No escape hatch. No rationalization. Just honest boolean answers.
+
+### The Hook System
+
+Four hooks work together to enable autonomous execution:
+
+| Hook | Purpose |
+|------|---------|
+| `appfix-bash-auto-approve.py` | Auto-approves Bash commands during appfix |
+| `appfix-exitplan-auto-approve.py` | Auto-approves plan mode transitions |
+| `plan-execution-reminder.py` | Injects autonomous execution context |
+| `stop-validator.py` | Validates completion checkpoint before stopping |
+
+**Security model**: Auto-approval only activates when `.claude/appfix-state.json` exists. Normal sessions require user approval.
+
+---
+
+## Setup
+
+### 1. Install the Toolkit
+
+```bash
+git clone https://github.com/Motium-AI/claude-code-toolkit.git
+cd claude-code-toolkit
+./scripts/install.sh
+```
+
+### 2. Configure Your Project
+
+Create a service topology file so Claude knows what to check:
+
+```bash
+mkdir -p .claude/skills/appfix/references
+cat > .claude/skills/appfix/references/service-topology.md << 'EOF'
+# Service Topology
+
+| Service | URL | Health Endpoint |
+|---------|-----|-----------------|
+| Frontend | https://staging.example.com | /api/health |
+| Backend | https://api-staging.example.com | /health |
+
+## Deployment Commands
+
+```bash
+# Frontend
+gh workflow run frontend-ci.yml -f environment=staging
+
+# Backend
+gh workflow run backend-ci.yml -f environment=staging
+```
+EOF
+```
+
+### 3. Run It
+
+```bash
+claude
+> /appfix
+```
+
+Or trigger with natural language:
+- "fix the app"
+- "debug production"
+- "why is it broken"
+
+---
+
+## Example Session
+
+```
+User: /appfix
+
+[PHASE 0] Pre-Flight
+  ✓ service-topology.md exists
+  ✓ Created appfix-state.json (enables auto-approval)
+
+[PHASE 0.5] Codebase Context
+  → EnterPlanMode (auto-approved)
+  → Explored: Next.js + FastAPI, recent auth changes
+  → ExitPlanMode
+
+[PHASE 1] Health Check
+  ✗ Frontend: 500 on /api/health
+  ✓ Backend: healthy
+  ✗ Browser: login form fails
+
+[PHASE 2] Log Collection
+  - Azure: TypeError in auth middleware
+  - Console: "Cannot read property 'user' of undefined"
+
+[PHASE 3] Execute Fix
+  - Edit: auth.py - add null check
+  - Commit: "appfix: Add null check in auth middleware"
+  - Deploy: gh workflow run + gh run watch (auto-approved)
+
+[PHASE 4] Verification
+  - Chrome MCP: navigated to /dashboard
+  - Screenshot: data displays correctly
+  - Console: clean (no errors)
+
+[UPDATE CHECKPOINT]
+  - is_job_complete: true
+  - web_testing_done: true
+  - deployed: true
+  - what_remains: "none"
+
+[TRY TO STOP]
+  → Stop hook validates checkpoint
+  → All checks pass
+
+[SUCCESS] APPFIX COMPLETE
+```
+
+---
+
+## Other Commands & Skills
+
+While `/appfix` is the flagship, the toolkit includes additional capabilities:
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/QA` | Exhaustive architecture audit |
+| `/deslop` | Detect and remove AI-generated code slop |
+| `/docupdate` | Documentation gap analysis |
+| `/webtest` | Browser automation testing |
+| `/interview` | Clarify requirements via Q&A |
+| `/designimprove` | Recursively improve UI via screenshot grading |
+| `/uximprove` | Recursively improve UX via usability analysis |
+
+### Skills
+
+| Skill | Triggers On |
+|-------|-------------|
+| `webapp-testing` | Browser testing, Chrome automation |
+| `frontend-design` | Web UI development |
+| `async-python-patterns` | asyncio, concurrent programming |
+| `nextjs-tanstack-stack` | Next.js App Router, TanStack |
+
+---
+
+## How It Works Under the Hood
+
+### Extension Mechanisms
+
+Claude Code supports three extension types:
+
+| Type | Trigger | Purpose |
+|------|---------|---------|
+| **Commands** | `/command-name` | Structured workflows |
+| **Skills** | Automatic keyword match | Domain expertise |
+| **Hooks** | Lifecycle events | Inject context, enforce behavior |
+
+### Hook Events
+
+| Event | Script | Purpose |
+|-------|--------|---------|
+| SessionStart | read-docs-reminder.py | Force reading project docs |
+| Stop | stop-validator.py | Validate completion checkpoint |
+| PostToolUse | plan-execution-reminder.py | Inject autonomous context |
+| PermissionRequest | appfix-*-auto-approve.py | Auto-approve during appfix |
+
+### The Completion Checkpoint Philosophy
+
+Why boolean checkpoints work:
+
+1. **Forces honesty** - You must choose true/false, no hedging
+2. **Self-enforcing** - If you say false, you're blocked
+3. **Deterministic** - No regex heuristics, just boolean checks
+4. **Trusts the model** - Models don't want to lie when asked directly
+
+The stop hook doesn't try to catch lies. It asks direct questions:
+- "Did you test this in the browser?" → Answer honestly
+- "Is the job actually complete?" → Answer honestly
+
+If you answer `false`, you're blocked. If you answer `true` honestly, you're done.
+
+---
 
 ## Directory Structure
 
 ```
 claude-code-toolkit/
-├── config/                     # The actual config files
-│   ├── settings.json           # Global settings + hook definitions
-│   ├── commands/               # 11 slash commands
-│   │   ├── QA.md
-│   │   ├── deslop.md
+├── config/
+│   ├── settings.json              # Hook definitions
+│   ├── commands/                  # Slash commands
+│   ├── hooks/                     # Python hook scripts
+│   │   ├── appfix-bash-auto-approve.py
+│   │   ├── appfix-exitplan-auto-approve.py
+│   │   ├── plan-execution-reminder.py
+│   │   ├── stop-validator.py
 │   │   └── ...
-│   ├── hooks/                  # 7 Python hook scripts (6 enabled by default)
-│   │   ├── stop-validator.py         # Enabled: Completion checkpoint validation
-│   │   ├── read-docs-trigger.py      # Enabled: Doc reading suggestions
-│   │   ├── read-docs-reminder.py     # Enabled: Doc reading reminders
-│   │   ├── plan-execution-reminder.py # Enabled: Autonomous execution context
-│   │   ├── appfix-exitplan-auto-approve.py # Enabled: Auto-approve ExitPlanMode
-│   │   ├── appfix-bash-auto-approve.py # Enabled: Auto-approve Bash commands
-│   │   └── skill-reminder.py         # Disabled: Skill keyword matching
-│   └── skills/                 # 10 skill directories
-│       ├── async-python-patterns/
-│       ├── nextjs-tanstack-stack/
+│   └── skills/
+│       ├── appfix/
+│       │   ├── SKILL.md           # Main skill definition
+│       │   └── references/        # Service topology, patterns
 │       └── ...
-├── docs/                       # Documentation
-│   ├── concepts/               # What are commands, skills, hooks
-│   ├── guides/                 # How-to guides
-│   └── architecture.md         # System overview
-├── examples/                   # Example configurations
-│   ├── minimal-setup/          # Just the essentials
-│   └── standalone-prompts/     # Individual audit prompts
+├── docs/
+│   ├── skills/appfix-guide.md     # Complete appfix guide
+│   └── concepts/hooks.md          # Hook system deep dive
 └── scripts/
-    └── install.sh              # One-line installer
+    └── install.sh
 ```
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/skills/appfix-guide.md](docs/skills/appfix-guide.md) | Complete /appfix guide |
+| [docs/concepts/hooks.md](docs/concepts/hooks.md) | Hook system deep dive |
+| [QUICKSTART.md](QUICKSTART.md) | 5-minute setup guide |
+
+---
 
 ## Philosophy
 
-This toolkit embodies six principles from [CLAUDE_AGENTS](docs/philosophy.md):
+Six principles from [CLAUDE_AGENTS](docs/philosophy.md):
 
-1. **Clarity Over Cleverness** — Explicit, obvious code. Optimize for human review.
-2. **Locality Over Abstraction** — Self-contained modules. Duplication is acceptable.
-3. **Compose Small Units** — Single-purpose, safely rewritable pieces.
-4. **Stateless by Default** — Pure functions. Side effects at boundaries.
-5. **Fail Fast & Loud** — Surface errors. No silent catches.
-6. **Tests as Specification** — Tests define correct behavior. Code is disposable.
+1. **Clarity Over Cleverness** — Explicit, obvious code
+2. **Locality Over Abstraction** — Self-contained modules
+3. **Compose Small Units** — Single-purpose, rewritable pieces
+4. **Stateless by Default** — Pure functions, effects at boundaries
+5. **Fail Fast & Loud** — Surface errors, no silent catches
+6. **Tests as Specification** — Tests define correct behavior
 
-## Customization
-
-### Create a Custom Command
-
-```bash
-# Create command file
-cat > ~/.claude/commands/my-audit.md << 'EOF'
 ---
-description: Run my custom audit
----
-
-Analyze the codebase for [specific concern]. Output findings as:
-
-1. **Critical** - Must fix immediately
-2. **Warning** - Should fix soon
-3. **Info** - Consider improving
-EOF
-
-# Use it
-claude
-> /my-audit
-```
-
-### Create a Custom Skill
-
-```bash
-mkdir -p ~/.claude/skills/my-domain
-cat > ~/.claude/skills/my-domain/SKILL.md << 'EOF'
----
-name: my-domain
-description: Expertise in [your domain]. Use when building [trigger keywords].
----
-
-## Core Patterns
-
-[Your domain knowledge here]
-EOF
-```
-
-See [docs/guides/customization.md](docs/guides/customization.md) for complete guides.
-
-## Contributing
-
-PRs welcome! Please follow existing patterns:
-
-- **Commands**: Markdown with YAML frontmatter, structured output format
-- **Skills**: Directory with `SKILL.md` + optional `references/`, `examples/`
-- **Hooks**: Python with JSON stdin, exit codes 0 (allow) or 2 (block)
 
 ## License
 
