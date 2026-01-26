@@ -27,8 +27,17 @@ DEBUG_LOG = Path(tempfile.gettempdir()) / "stop-hook-debug.log"
 
 # Files/patterns excluded from version tracking (dirty calculation)
 # These don't represent code changes requiring re-deployment
+# IMPORTANT: Use both root and nested patterns for directories like .claude/
+# because :(exclude).claude/ only matches at root, not nested paths
 VERSION_TRACKING_EXCLUSIONS = [
-    ":(exclude).claude/",
+    # Base path required for exclude patterns to work correctly
+    ".",
+    # .claude directory at any depth (checkpoint files, state files)
+    ":(exclude).claude",
+    ":(exclude).claude/*",
+    ":(exclude)*/.claude",
+    ":(exclude)*/.claude/*",
+    # Lock files
     ":(exclude)*.lock",
     ":(exclude)package-lock.json",
     ":(exclude)yarn.lock",
@@ -36,17 +45,24 @@ VERSION_TRACKING_EXCLUSIONS = [
     ":(exclude)poetry.lock",
     ":(exclude)Pipfile.lock",
     ":(exclude)Cargo.lock",
+    # Git metadata
     ":(exclude).gitmodules",
+    # Python artifacts
     ":(exclude)*.pyc",
-    ":(exclude)__pycache__/",
+    ":(exclude)__pycache__",
+    ":(exclude)*/__pycache__",
+    # Environment and logs
     ":(exclude).env*",
     ":(exclude)*.log",
+    # OS and editor artifacts
     ":(exclude).DS_Store",
     ":(exclude)*.swp",
     ":(exclude)*.swo",
     ":(exclude)*.orig",
-    ":(exclude).idea/",
-    ":(exclude).vscode/",
+    ":(exclude).idea",
+    ":(exclude).idea/*",
+    ":(exclude).vscode",
+    ":(exclude).vscode/*",
 ]
 
 
@@ -85,9 +101,29 @@ def get_git_diff_files() -> list[str]:
 
 
 def has_code_changes(files: list[str]) -> bool:
-    """Check if any code files were modified (not just docs/config)."""
+    """Check if any application code files were modified (not infrastructure/toolkit).
+
+    Excludes:
+    - Claude Code hooks, skills, commands (config/hooks/, config/skills/, config/commands/)
+    - .claude/ directory files
+    - Documentation and scripts in prompts/ directory
+    """
     code_extensions = {'.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs', '.java', '.rb', '.php'}
+    # Infrastructure paths that don't require deployment
+    # These are tooling, documentation utilities, not deployed application code
+    infrastructure_patterns = [
+        'config/hooks/',
+        'config/skills/',
+        'config/commands/',
+        '.claude/',
+        'prompts/config/',
+        'prompts/scripts/',
+        'scripts/',  # Documentation processing scripts
+    ]
     for f in files:
+        # Skip infrastructure/toolkit files
+        if any(pattern in f for pattern in infrastructure_patterns):
+            continue
         ext = Path(f).suffix.lower()
         if ext in code_extensions:
             return True
@@ -328,6 +364,38 @@ def is_appfix_mode(cwd: str = "") -> bool:
     return False
 
 
+def is_godo_mode(cwd: str = "") -> bool:
+    """
+    Check if godo mode is active.
+
+    Checks user-level state first (~/.claude/godo-state.json) to handle
+    cross-repo scenarios.
+
+    Falls back to project-level state for backward compatibility.
+    """
+    # User-level state takes precedence (cross-repo compatible)
+    user_state = Path.home() / ".claude" / "godo-state.json"
+    if user_state.exists():
+        return True
+
+    # Fall back to project-level state (backward compatibility)
+    if cwd:
+        project_state = Path(cwd) / ".claude" / "godo-state.json"
+        if project_state.exists():
+            return True
+
+    return False
+
+
+def is_autonomous_mode(cwd: str = "") -> bool:
+    """
+    Check if any autonomous execution mode is active (godo or appfix).
+
+    This unified check determines if strict completion validation applies.
+    """
+    return is_godo_mode(cwd) or is_appfix_mode(cwd)
+
+
 def get_dependent_fields(field: str) -> list[str]:
     """
     Get all fields that depend on a given field (transitively).
@@ -406,28 +474,27 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = 
     if not report.get("is_job_complete", False):
         failures.append("is_job_complete is false - YOU said the job isn't done")
 
-    # Get code_changes_made from checkpoint - this is the source of truth for THIS session
-    # Even if git diff shows changes, the model might be doing research/audit only
-    code_changed = report.get("code_changes_made", False)
+    # Check for actual APPLICATION code changes (not infrastructure/toolkit)
+    # This determines if deployment, linting, and web testing are required
+    has_app_code = has_code_changes(modified_files)
+    has_frontend = has_frontend_changes(modified_files)
 
-    # Only require web_testing, deployment, etc. if code was actually changed
-    if code_changed:
+    # Only require web_testing, deployment, linting if APPLICATION code was changed
+    # Infrastructure/toolkit changes (hooks, skills, scripts) don't require these
+    if has_app_code:
         # Check: web_testing_done required if frontend changes
-        has_frontend = has_frontend_changes(modified_files)
         if has_frontend and not report.get("web_testing_done", False):
             failures.append("web_testing_done is false - frontend changes require browser testing")
 
-        # Check: if code changes made, should be deployed
+        # Check: if app code changes made, should be deployed
         if not report.get("deployed", False):
-            # Only fail if there are actual code changes in git
-            if has_code_changes(modified_files):
-                failures.append("deployed is false - you made code changes but didn't deploy")
+            failures.append("deployed is false - you made application code changes but didn't deploy")
 
         # Check: console_errors_checked should be true if frontend changes
         if has_frontend and not report.get("console_errors_checked", False):
             failures.append("console_errors_checked is false - check browser console for errors")
 
-        # Check: linters_pass required if code was changed
+        # Check: linters_pass required if app code was changed
         if not report.get("linters_pass", False):
             failures.append(
                 "linters_pass is false - run linters and fix ALL errors (including pre-existing ones). "
@@ -442,7 +509,7 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = 
                 "POLICY: Fix ALL linter errors, no exceptions. 'Not my code' is not an excuse."
             )
 
-    # Check: docs_read_at_start required for appfix mode
+    # Check: docs_read_at_start required for appfix mode (not godo - that's appfix-specific)
     if is_appfix_mode(cwd):
         if not report.get("docs_read_at_start", False):
             failures.append(
@@ -450,9 +517,9 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = 
                 "before starting appfix work"
             )
 
-    # Check: In appfix mode, browser verification is ALWAYS required
-    # (regardless of code_changes_made - infra fixes need verification too)
-    if is_appfix_mode(cwd):
+    # Check: In autonomous mode (godo or appfix), browser verification is ALWAYS required
+    # (regardless of code_changes_made - all changes need verification)
+    if is_autonomous_mode(cwd):
         # NEW: Artifact-based verification (primary method)
         # Check for Surf CLI artifacts in .claude/web-smoke/
         artifact_valid, artifact_errors = validate_web_smoke_artifacts(cwd)
@@ -691,7 +758,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     Determine if this session requires a completion checkpoint.
 
     Checkpoint required when:
-    - Appfix mode is active (appfix-state.json exists)
+    - Autonomous mode is active (godo-state.json or appfix-state.json exists)
     - THIS SESSION made code changes (diff hash changed since session start)
     - A plan file exists for this project
 
@@ -700,9 +767,9 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     - Sessions with only pre-existing uncommitted changes from previous sessions
     - Simple file reads, documentation queries
     """
-    # CRITICAL: If appfix mode active, checkpoint is ALWAYS required
-    # This ensures infrastructure-only changes (az CLI) are validated
-    if is_appfix_mode(cwd):
+    # CRITICAL: If autonomous mode active (godo or appfix), checkpoint is ALWAYS required
+    # This ensures all changes are validated before stopping
+    if is_autonomous_mode(cwd):
         return True
 
     # Check if THIS SESSION made code changes (not pre-existing changes)

@@ -53,11 +53,12 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | `/designimprove` | Recursive UI design improvement |
 | `/uximprove` | Recursive UX improvement |
 
-## Available Skills (10)
+## Available Skills (11)
 
 | Skill | Triggers On |
 |-------|-------------|
-| `appfix` | "fix the app", autonomous debugging |
+| `godo` | /godo, "go do", "just do it" - task-agnostic autonomous execution |
+| `appfix` | "fix the app", autonomous debugging (extends godo) |
 | `async-python-patterns` | asyncio, concurrent programming |
 | `nextjs-tanstack-stack` | Next.js, TanStack, Zustand |
 | `prompt-engineering-patterns` | Prompt optimization |
@@ -68,17 +69,16 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | `ux-improver` | UX usability review |
 | `docs-navigator` | Documentation navigation |
 
-## Active Hooks (7 Event Types)
+## Active Hooks (6 Event Types)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
 | SessionStart | session-snapshot.py, read-docs-reminder.py | Git diff snapshot, doc reading |
 | Stop | stop-validator.py | Validates completion checkpoint |
 | PostToolUse (Edit/Write) | checkpoint-invalidator.py | Resets stale checkpoint flags |
-| UserPromptSubmit | read-docs-trigger.py, skill-reminder.py | Doc reading triggers, skill suggestions |
+| UserPromptSubmit | read-docs-trigger.py | Doc reading triggers |
 | PostToolUse (ExitPlanMode) | plan-execution-reminder.py, appfix-auto-approve.py | Execution context injection |
-| PermissionRequest (Bash) | appfix-bash-auto-approve.py | Auto-approve Bash commands (appfix) |
-| PermissionRequest (ExitPlanMode) | appfix-exitplan-auto-approve.py | Auto-approve plan transitions (appfix) |
+| PermissionRequest | appfix-auto-approve.py | Auto-approve all tools during godo/appfix |
 
 ## Directory Structure
 
@@ -89,13 +89,14 @@ prompts/
 ├── config/
 │   ├── settings.json      # Hook definitions
 │   ├── commands/          # 11 command specs
-│   ├── hooks/             # 10 Python hook scripts
-│   └── skills/            # 10 skill directories
+│   ├── hooks/             # 7 active hooks + 5 utilities
+│   └── skills/            # 11 skill directories
 ├── docs/
 │   ├── index.md           # You are here
 │   ├── architecture.md    # System design
 │   ├── philosophy.md      # Core principles
 │   ├── concepts/          # Deep dives
+│   ├── skills/            # Skill deep-dive guides
 │   └── guides/            # How-to guides
 └── examples/              # Sample configurations
 ```

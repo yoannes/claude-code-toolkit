@@ -7,6 +7,10 @@ description: Autonomous app debugging system. Checks environment health, diagnos
 
 Autonomous debugging skill that iterates until all services are healthy and verified in browser.
 
+> **Note**: `/appfix` is a debugging specialization of the universal `/godo` skill.
+> It inherits the completion checkpoint architecture and adds debugging-specific phases
+> (health checks, log collection, service topology). For general tasks, use `/godo`.
+
 ## Architecture: Completion Checkpoint
 
 This workflow uses a **deterministic boolean checkpoint** to enforce completion:
@@ -249,9 +253,9 @@ Update these when your changes affect them:
 │        └─► Update IaC files in infra repo                           │
 │        └─► Create PR to infra repo                                  │
 │                                                                      │
-│     f. VERIFY                                                       │
-│        └─► Test in browser via Chrome MCP or /webtest               │
-│        └─► Check browser console is clean                           │
+│     f. VERIFY (Surf CLI first, Chrome MCP fallback)                 │
+│        └─► Run: python3 ~/.claude/hooks/surf-verify.py              │
+│        └─► Check .claude/web-smoke/summary.json passed              │
 │        └─► Update appfix-state.json                                 │
 │                                                                      │
 │  4. LOOP UNTIL CHECKPOINT CAN PASS                                  │
@@ -278,7 +282,8 @@ Also maintain `.claude/appfix-state.json` for iteration tracking:
     "url_verified": "https://staging.example.com/dashboard",
     "console_clean": true,
     "verified_at": "2025-01-24T10:30:00Z",
-    "method": "chrome_mcp"
+    "method": "surf_cli",
+    "artifacts": ".claude/web-smoke/"
   }
 }
 ```
@@ -361,7 +366,7 @@ Check each service's health endpoint from `service-topology.md`:
 curl -sf https://[service-url]/health || echo "UNHEALTHY"
 ```
 
-Run browser tests via Chrome MCP or /webtest.
+Run initial browser health check (Chrome MCP or /webtest for diagnosis, NOT final verification).
 
 ## Phase 2: Log Collection
 
@@ -511,39 +516,57 @@ If you ran ANY of these commands:
 
 **You cannot claim success without browser verification.**
 
-### Phase 4.5: Deterministic Web Verification (PREFERRED)
+### CRITICAL: Use Surf CLI First, Not Chrome MCP
 
-Instead of manually testing with Chrome MCP, run the deterministic Surf workflow for artifact-based proof:
+**DO NOT reach for Chrome MCP tools.** Your first action in Phase 4 MUST be running Surf CLI.
 
-**Step 1: Ensure Surf CLI is installed**
-```bash
-which surf || npm install -g @nicobailon/surf-cli
+The stop hook validates Surf artifacts in `.claude/web-smoke/`. If you skip Surf and use Chrome MCP, you must manually create artifacts AND set checkpoint fields manually. **This is error-prone and slower.**
+
+```
+CORRECT ORDER:
+1. Try Surf CLI first (automatic artifact generation)
+2. ONLY if Surf CLI fails → Fall back to Chrome MCP
+
+INCORRECT:
+- Calling mcp__claude-in-chrome__tabs_context as first verification step
+- Using Chrome MCP when Surf CLI is available
+- Skipping Surf because "Chrome is easier"
 ```
 
-**Step 2: Run verification**
+### Step 1: Run Surf CLI Verification (REQUIRED FIRST ATTEMPT)
+
 ```bash
-# Using explicit URLs
+# Check if Surf CLI is available
+which surf && echo "Surf CLI available" || echo "FALLBACK: Surf not installed"
+
+# If available, run verification (creates artifacts automatically)
 python3 ~/.claude/hooks/surf-verify.py --urls "https://staging.example.com/dashboard" "https://staging.example.com/login"
 
 # Or using URLs from service-topology.md
 python3 ~/.claude/hooks/surf-verify.py --from-topology
 ```
 
-**Step 3: Check artifacts exist**
+### Step 2: Check Artifacts Were Created
+
 ```bash
 ls -la .claude/web-smoke/
 # Expected: summary.json, screenshots/, console.txt
+cat .claude/web-smoke/summary.json
+# Should show: "passed": true
 ```
 
-**Step 4: If verification fails**
-- Check `.claude/web-smoke/summary.json` for error details
-- Check `.claude/web-smoke/console.txt` for console errors
-- Check `.claude/web-smoke/failing-requests.sh` for network errors
-- Fix issues and re-run verification
+### Step 3: If Surf Verification Fails
+
+1. Check `.claude/web-smoke/summary.json` for error details
+2. Check `.claude/web-smoke/console.txt` for console errors
+3. Check `.claude/web-smoke/failing-requests.sh` for network errors
+4. **Fix the actual issues** and re-run Surf verification
+5. **DO NOT bypass by using Chrome MCP** - fix the real problems
 
 **The stop hook validates these artifacts automatically.** If `summary.json` shows `passed: false`, you'll be blocked until you fix the issues.
 
-**Waiver file for expected errors:**
+### Step 4: Waiver File (for expected third-party errors only)
+
 If you have expected third-party errors (analytics blocked, etc.), create `.claude/web-smoke/waivers.json`:
 ```json
 {
@@ -553,18 +576,26 @@ If you have expected third-party errors (analytics blocked, etc.), create `.clau
 }
 ```
 
-### 4.1 Fallback: Chrome MCP Verification
+### Fallback: Chrome MCP (ONLY if Surf CLI is unavailable)
 
-If Surf CLI is not available or fails, use Chrome MCP tools:
+**Only use Chrome MCP if:**
+- Surf CLI is not installed AND cannot be installed
+- surf-verify.py script is missing
+- Network/environment prevents Surf from running
+
+If forced to use Chrome MCP:
 ```
 - mcp__claude-in-chrome__navigate to the app URL
 - mcp__claude-in-chrome__computer action=screenshot to capture state
 - mcp__claude-in-chrome__read_console_messages to check for errors
 ```
 
-Or use /webtest skill.
+**When using Chrome MCP, you MUST manually:**
+1. Create `.claude/web-smoke/summary.json` with test results
+2. Set `web_testing_done: true` in the checkpoint
+3. Set `web_testing_done_at_version` to current git version
 
-When using Chrome MCP, you must manually set `web_testing_done: true` in the checkpoint.
+This is MORE work than using Surf CLI, which does all this automatically.
 
 ### 4.2 Check Console
 - ZERO uncaught JavaScript errors
@@ -582,7 +613,8 @@ After verification, update both files:
     "url_verified": "https://staging.example.com/dashboard",
     "console_clean": true,
     "verified_at": "2025-01-24T10:30:00Z",
-    "method": "chrome_mcp"
+    "method": "surf_cli",
+    "artifacts": ".claude/web-smoke/"
   }
 }
 ```
@@ -619,7 +651,6 @@ If missing and needed, ask the user **once at start**.
 | File | Path | Required |
 |------|------|----------|
 | Service topology | `.claude/skills/appfix/references/service-topology.md` | **YES** |
-| Log patterns | `.claude/skills/appfix/references/log-patterns.md` | Optional |
 
 **Always read from project-local paths, not `~/.claude/`**
 
@@ -693,11 +724,11 @@ User: /appfix
 [PHASE 3.6] Infrastructure Sync (SKIPPED - no az CLI commands used)
 
 [PHASE 4] Verification
-  - Chrome MCP: navigated to /dashboard
-  - Screenshot: data displays correctly
+  - Surf CLI: python3 ~/.claude/hooks/surf-verify.py --urls "https://staging.example.com/dashboard"
+  - Artifacts created: .claude/web-smoke/summary.json
+  - Screenshots: 1 captured
   - Console: clean (no errors)
-  - Updated verification_evidence
-  - Updated completion-checkpoint.json
+  - Stop hook auto-sets: web_testing_done: true
 
 [TRY TO STOP]
   → Stop hook checks checkpoint

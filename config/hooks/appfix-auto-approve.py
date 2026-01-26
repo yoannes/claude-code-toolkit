@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-PermissionRequest hook for ALL tools during appfix.
+PermissionRequest hook for ALL tools during autonomous execution modes.
 
-Auto-approves all tool permissions when appfix mode is detected,
+Auto-approves all tool permissions when godo or appfix mode is detected,
 enabling truly autonomous execution without permission prompts.
 
-Detection: Checks for .claude/appfix-state.json in cwd or APPFIX_ACTIVE env var.
+Detection: Checks for .claude/godo-state.json or .claude/appfix-state.json
+           in cwd, or GODO_ACTIVE/APPFIX_ACTIVE env vars.
 
 Hook event: PermissionRequest
 Matcher: * (wildcard - matches all tools)
@@ -19,7 +20,7 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import is_appfix_active, log_debug
+from _common import is_autonomous_mode_active, log_debug
 
 
 def main():
@@ -31,8 +32,8 @@ def main():
 
     cwd = input_data.get("cwd", "")
 
-    # Only auto-approve if appfix is active
-    if not is_appfix_active(cwd):
+    # Only auto-approve if autonomous mode is active (godo or appfix)
+    if not is_autonomous_mode_active(cwd):
         sys.exit(0)  # Silent passthrough - normal approval flow
 
     # Auto-approve the tool (any tool)

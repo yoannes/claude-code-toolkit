@@ -99,37 +99,6 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
         "hooks": [
           {
             "type": "command",

@@ -7,6 +7,8 @@ __pycache__/
 .claude/completion-checkpoint.json
 .claude/session-snapshot.json
 .claude/appfix-state.json
+.claude/godo-state.json
+.claude/web-smoke/
 .claude/compacted.*.marker
 
 # OS

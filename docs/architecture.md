@@ -215,19 +215,9 @@ Claude stops → Hook blocks → Claude addresses → Claude stops → Hook allo
 
 **Purpose**: React to each user prompt. Multiple hooks can fire on the same event.
 
-This toolkit includes two UserPromptSubmit hooks:
+This toolkit includes one UserPromptSubmit hook:
 
-#### 1. Skill Suggestion Hook (skill-reminder.py)
-
-**Purpose**: Suggests relevant skills based on prompt keywords.
-
-**Behavior**:
-1. Scans user prompt for keywords
-2. Matches against skill trigger descriptions
-3. Suggests relevant skills via stdout
-4. Returns exit code 0 (non-blocking)
-
-#### 2. Documentation Trigger Hook (read-docs-trigger.py)
+#### Documentation Trigger Hook (read-docs-trigger.py)
 
 **Purpose**: Triggers deep documentation reading when user says "read the docs".
 

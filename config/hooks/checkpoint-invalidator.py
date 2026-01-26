@@ -37,8 +37,17 @@ CODE_EXTENSIONS = {
 
 # Files/patterns excluded from version tracking (dirty calculation)
 # These don't represent code changes requiring re-deployment
+# IMPORTANT: Use both root and nested patterns for directories like .claude/
+# because :(exclude).claude/ only matches at root, not nested paths
 VERSION_TRACKING_EXCLUSIONS = [
-    ":(exclude).claude/",
+    # Base path required for exclude patterns to work correctly
+    ".",
+    # .claude directory at any depth (checkpoint files, state files)
+    ":(exclude).claude",
+    ":(exclude).claude/*",
+    ":(exclude)*/.claude",
+    ":(exclude)*/.claude/*",
+    # Lock files
     ":(exclude)*.lock",
     ":(exclude)package-lock.json",
     ":(exclude)yarn.lock",
@@ -46,17 +55,24 @@ VERSION_TRACKING_EXCLUSIONS = [
     ":(exclude)poetry.lock",
     ":(exclude)Pipfile.lock",
     ":(exclude)Cargo.lock",
+    # Git metadata
     ":(exclude).gitmodules",
+    # Python artifacts
     ":(exclude)*.pyc",
-    ":(exclude)__pycache__/",
+    ":(exclude)__pycache__",
+    ":(exclude)*/__pycache__",
+    # Environment and logs
     ":(exclude).env*",
     ":(exclude)*.log",
+    # OS and editor artifacts
     ":(exclude).DS_Store",
     ":(exclude)*.swp",
     ":(exclude)*.swo",
     ":(exclude)*.orig",
-    ":(exclude).idea/",
-    ":(exclude).vscode/",
+    ":(exclude).idea",
+    ":(exclude).idea/*",
+    ":(exclude).vscode",
+    ":(exclude).vscode/*",
 ]
 
 # Fields invalidated when code changes (in dependency order)

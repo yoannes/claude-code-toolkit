@@ -27,7 +27,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ARTIFACT_DIR = ".claude/web-smoke"
@@ -113,7 +113,7 @@ def run_surf_workflow(urls: list[str]) -> dict:
     waivers = load_waivers()
     results = {
         "passed": True,
-        "tested_at": datetime.utcnow().isoformat() + "Z",
+        "tested_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "tested_at_version": get_git_version(),
         "urls_tested": urls,
         "screenshot_count": 0,
@@ -151,17 +151,19 @@ def run_surf_workflow(urls: list[str]) -> dict:
             print("ERROR: surf command not found. Install with: npm install -g @nicobailon/surf-cli")
             sys.exit(2)
 
-        # Take screenshot
-        screenshot_path = f"{ARTIFACT_DIR}/screenshots/page_{i}.png"
+        # Take screenshot (Surf CLI requires absolute paths)
+        screenshot_path = Path(ARTIFACT_DIR).resolve() / "screenshots" / f"page_{i}.png"
         try:
             subprocess.run(
-                ["surf", "screenshot", "--output", screenshot_path],
+                ["surf", "screenshot", "--output", str(screenshot_path)],
                 capture_output=True,
                 timeout=10,
             )
-            if os.path.exists(screenshot_path):
+            if screenshot_path.exists():
                 results["screenshot_count"] += 1
                 print(f"  ✓ Screenshot saved: {screenshot_path}")
+            else:
+                print(f"  ⚠ Screenshot not saved (path: {screenshot_path})")
         except (subprocess.TimeoutExpired, FileNotFoundError):
             print("  ⚠ Screenshot failed")
 
@@ -196,8 +198,10 @@ def run_surf_workflow(urls: list[str]) -> dict:
                 text=True,
                 timeout=10,
             )
-            if network.stdout.strip():
-                for line in network.stdout.strip().split("\n"):
+            output = network.stdout.strip()
+            # "No network requests captured" means no 4xx/5xx errors - this is success, not failure
+            if output and output != "No network requests captured":
+                for line in output.split("\n"):
                     if line.strip():
                         if matches_waiver(line, waivers.get("network_patterns", [])):
                             results["waivers_applied"] += 1

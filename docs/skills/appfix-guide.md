@@ -37,7 +37,7 @@ Complete guide to the `/appfix` skill for autonomous application debugging and r
 
 - **Autonomous Operation**: Runs without user confirmation once started
 - **Deterministic Checkpoint**: Uses boolean self-report for reliable completion
-- **Browser Verification**: Requires real browser testing via Chrome MCP
+- **Browser Verification**: Requires real browser testing (Surf CLI preferred, Chrome MCP fallback)
 - **Trust-Based**: Trusts model to be honest, verifies via boolean checks
 
 ### When to Use
@@ -221,7 +221,7 @@ Or trigger with natural language:
 The model:
 1. Explores codebase and creates a fix plan
 2. Executes fixes, commits, deploys
-3. Verifies in browser via Chrome MCP
+3. Verifies in browser (Surf CLI first, Chrome MCP fallback)
 4. Updates completion checkpoint
 5. Tries to stop - blocked if checkpoint fails
 6. Continues working until checkpoint passes
@@ -272,7 +272,7 @@ Check each service's health endpoint:
 curl -sf https://[service-url]/health || echo "UNHEALTHY"
 ```
 
-Use Chrome MCP or /webtest for browser testing.
+Use Surf CLI for browser testing (Chrome MCP as fallback).
 
 ### Phase 2: Log Collection
 
@@ -555,7 +555,7 @@ When using Chrome MCP, you must manually set `web_testing_done: true` in the che
     "url_verified": "https://staging.example.com/dashboard",
     "console_clean": true,
     "verified_at": "2025-01-24T10:30:00Z",
-    "method": "chrome_mcp"
+    "method": "surf_cli"
   }
 }
 ```
@@ -781,7 +781,7 @@ for i in {1..12}; do curl -sf "$HEALTH_URL" && break || sleep 5; done
     "url_verified": "https://staging.example.com/dashboard",
     "console_clean": true,
     "verified_at": "2025-01-24T10:30:00Z",
-    "method": "chrome_mcp"
+    "method": "surf_cli"
   }
 }
 ```

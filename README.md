@@ -1,19 +1,19 @@
 # Claude Code Toolkit
 
-> Autonomous debugging that actually works. Fix your app with `/appfix`.
+> Autonomous execution that actually completes. Use `/godo` for any task, `/appfix` for debugging.
 
 ## The Problem
 
-When production breaks at 2 AM, you don't want an AI that asks "Should I check the logs?" You want one that:
+When you need something done, you don't want an AI that asks "Should I continue?" You want one that:
 
-1. Checks the logs
-2. Finds the root cause
-3. Fixes the code
+1. Understands the codebase first (mandatory plan mode)
+2. Makes the changes
+3. Runs linters and fixes ALL errors
 4. Deploys the fix
 5. Verifies it works in the browser
 6. **Doesn't stop until it's actually done**
 
-That's what `/appfix` does.
+That's what `/godo` and `/appfix` do.
 
 ## Quick Start
 
@@ -22,12 +22,15 @@ That's what `/appfix` does.
 git clone https://github.com/Motium-AI/claude-code-toolkit.git
 cd claude-code-toolkit && ./scripts/install.sh
 
-# Fix your app
+# Execute any task autonomously
 claude
+> /godo add a logout button to the navbar
+
+# Or debug a broken app
 > /appfix
 ```
 
-Claude will autonomously debug, fix, deploy, and verify your application.
+Claude will autonomously plan, execute, deploy, and verify your changes.
 
 ---
 
@@ -42,7 +45,7 @@ Claude will autonomously debug, fix, deploy, and verify your application.
 │                                                                          │
 │  1. HEALTH CHECK                                                         │
 │     └─► Check all services (frontend, backend, workers)                 │
-│     └─► Run browser tests via Chrome MCP                                │
+│     └─► Run browser tests via Surf CLI (Chrome MCP as fallback)         │
 │                                                                          │
 │  2. IF FAILURES DETECTED:                                                │
 │     a. COLLECT LOGS                                                      │
@@ -57,7 +60,7 @@ Claude will autonomously debug, fix, deploy, and verify your application.
 │        └─► gh workflow run && gh run watch --exit-status                │
 │                                                                          │
 │     d. VERIFY                                                            │
-│        └─► Test in browser (Chrome MCP)                                 │
+│        └─► Test in browser (Surf CLI first, Chrome MCP fallback)        │
 │        └─► Check console is clean                                       │
 │                                                                          │
 │  3. LOOP until all services healthy + verified in browser               │
@@ -99,12 +102,12 @@ Four hooks work together to enable autonomous execution:
 
 | Hook | Purpose |
 |------|---------|
-| `appfix-bash-auto-approve.py` | Auto-approves Bash commands during appfix |
-| `appfix-exitplan-auto-approve.py` | Auto-approves plan mode transitions |
+| `appfix-auto-approve.py` | Auto-approves ALL tools during godo/appfix mode |
 | `plan-execution-reminder.py` | Injects autonomous execution context |
 | `stop-validator.py` | Validates completion checkpoint before stopping |
+| `checkpoint-invalidator.py` | Resets stale checkpoint flags when code changes |
 
-**Security model**: Auto-approval only activates when `.claude/appfix-state.json` exists. Normal sessions require user approval.
+**Security model**: Auto-approval only activates when `.claude/godo-state.json` or `.claude/appfix-state.json` exists. Normal sessions require user approval.
 
 ---
 
@@ -187,7 +190,7 @@ User: /appfix
   - Deploy: gh workflow run + gh run watch (auto-approved)
 
 [PHASE 4] Verification
-  - Chrome MCP: navigated to /dashboard
+  - Surf CLI: python3 ~/.claude/hooks/surf-verify.py --urls "..."
   - Screenshot: data displays correctly
   - Console: clean (no errors)
 
@@ -279,10 +282,10 @@ claude-code-toolkit/
 │   ├── settings.json              # Hook definitions
 │   ├── commands/                  # Slash commands
 │   ├── hooks/                     # Python hook scripts
-│   │   ├── appfix-bash-auto-approve.py
-│   │   ├── appfix-exitplan-auto-approve.py
-│   │   ├── plan-execution-reminder.py
-│   │   ├── stop-validator.py
+│   │   ├── appfix-auto-approve.py       # Auto-approves ALL tools during godo/appfix
+│   │   ├── checkpoint-invalidator.py    # Resets stale checkpoint flags
+│   │   ├── plan-execution-reminder.py   # Injects autonomous context
+│   │   ├── stop-validator.py            # Validates completion checkpoint
 │   │   └── ...
 │   └── skills/
 │       ├── appfix/

@@ -735,15 +735,15 @@ DO NOT ask for confirmation. DO NOT wait for user input.
 The user invoked /appfix specifically for autonomous debugging.
 ```
 
-### PermissionRequest Hook: Auto-Approve Plan Mode
+### PermissionRequest Hook: Auto-Approve All Tools
 
-**File**: `~/.claude/hooks/appfix-exitplan-auto-approve.py`
+**File**: `~/.claude/hooks/appfix-auto-approve.py`
 
-**Purpose**: Auto-approve the ExitPlanMode permission dialog during appfix to enable truly autonomous execution.
+**Purpose**: Auto-approve ALL tool permission dialogs during godo/appfix to enable truly autonomous execution.
 
 **Behavior**:
-1. Receives permission request for `ExitPlanMode` tool
-2. If `APPFIX_ACTIVE=true`: Returns decision to allow the tool
+1. Receives permission request for any tool
+2. If godo or appfix state file exists: Returns decision to allow the tool
 3. If not active: Silent pass-through (no output)
 
 **Hook Output Schema**:
@@ -762,11 +762,10 @@ The user invoked /appfix specifically for autonomous debugging.
 ```json
 "PermissionRequest": [
   {
-    "matcher": "ExitPlanMode",
     "hooks": [
       {
         "type": "command",
-        "command": "python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py",
+        "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
         "timeout": 5
       }
     ]
@@ -774,7 +773,7 @@ The user invoked /appfix specifically for autonomous debugging.
 ]
 ```
 
-**Why this matters**: Without this hook, Claude would pause at the "Would you like to proceed?" dialog after creating a plan, requiring manual user approval. During `/appfix`, this breaks autonomous execution flow.
+**Why this matters**: Without this hook, Claude would pause at permission dialogs for various tools (Read, Bash, Edit, etc.), requiring manual user approval. During `/godo` or `/appfix`, this breaks autonomous execution flow. The catch-all matcher (no `matcher` field) ensures ALL tools are auto-approved.
 
 ### SubagentStop Hook: Validate Agent Output
 
@@ -898,12 +897,12 @@ echo '{"tool_name":"AskUserQuestion","cwd":"/tmp","tool_input":{"questions":[{"q
 # Method 2: Test with state file (primary detection mechanism)
 mkdir -p /tmp/test-project/.claude
 echo '{"iteration": 1}' > /tmp/test-project/.claude/appfix-state.json
-echo '{"tool_name":"ExitPlanMode","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py
+echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-auto-approve.py
 # Expected: JSON with decision: allow
 
 # Test without appfix active (should pass through)
 rm -rf /tmp/test-project/.claude
-echo '{"tool_name":"ExitPlanMode","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-exitplan-auto-approve.py
+echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-auto-approve.py
 # Expected: No output (pass through)
 ```
 
