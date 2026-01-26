@@ -9,6 +9,11 @@ Two-phase stop flow with completion checkpoint validation:
 The model MUST fill out .claude/completion-checkpoint.json with honest
 boolean answers. The hook deterministically checks these booleans.
 
+Worktree Support:
+- Detects if running in a git worktree (for parallel agent isolation)
+- Uses worktree-local checkpoint files for isolation
+- Reports worktree context in validation messages
+
 Exit codes:
   0 - Allow stop
   2 - Block stop (stderr shown to Claude)
@@ -24,6 +29,74 @@ from pathlib import Path
 
 # Debug logging
 DEBUG_LOG = Path(tempfile.gettempdir()) / "stop-hook-debug.log"
+
+
+# ============================================================================
+# Worktree Detection
+# ============================================================================
+
+def is_worktree(cwd: str = "") -> bool:
+    """Check if the current directory is a git worktree (not the main repo)."""
+    try:
+        git_dir = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        git_common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        # If git-dir != git-common-dir, this is a linked worktree
+        return git_dir.stdout.strip() != git_common.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def get_worktree_info(cwd: str = "") -> dict | None:
+    """Get information about the current worktree if in one."""
+    if not is_worktree(cwd):
+        return None
+    try:
+        # Get the branch name
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        branch_name = branch.stdout.strip()
+
+        # Get worktree path
+        worktree_path = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+
+        # Check for agent state file
+        state_file = Path(worktree_path.stdout.strip()) / ".claude" / "worktree-agent-state.json"
+        agent_id = None
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text())
+                agent_id = state.get("agent_id")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        return {
+            "branch": branch_name,
+            "agent_id": agent_id,
+            "path": worktree_path.stdout.strip(),
+            "is_claude_worktree": agent_id is not None,
+        }
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
 
 # Files/patterns excluded from version tracking (dirty calculation)
 # These don't represent code changes requiring re-deployment
@@ -169,16 +242,19 @@ def get_diff_hash(cwd: str = "") -> str:
 
 def get_code_version(cwd: str = "") -> str:
     """
-    Get current code version (git HEAD + dirty state hash).
-
-    Excludes metadata files (lock files, IDE config, .claude/, etc.) from
-    dirty calculation. This prevents version-dependent checkpoint fields
-    from becoming stale when only metadata changes (not actual code).
+    Get current code version (git HEAD + dirty indicator).
 
     Returns format:
     - "abc1234" - clean commit
-    - "abc1234-dirty-def5678" - commit with uncommitted code changes
+    - "abc1234-dirty" - commit with uncommitted changes (no hash suffix)
     - "unknown" - not a git repo
+
+    NOTE: The dirty indicator is boolean, NOT a hash. This ensures version
+    stability during development - version only changes at commit boundaries,
+    not on every file edit. This prevents checkpoint invalidation loops.
+
+    Excludes metadata files (lock files, IDE config, .claude/, etc.) from
+    dirty calculation.
     """
     try:
         head = subprocess.run(
@@ -195,9 +271,10 @@ def get_code_version(cwd: str = "") -> str:
             capture_output=True, text=True, timeout=5,
             cwd=cwd or None,
         )
-        if diff.stdout:
-            dirty_hash = hashlib.sha1(diff.stdout.encode()).hexdigest()[:7]
-            return f"{head_hash}-dirty-{dirty_hash}"
+        # Return stable version - no hash suffix for dirty state
+        # This prevents version from changing on every edit
+        if diff.stdout.strip():
+            return f"{head_hash}-dirty"
 
         return head_hash
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -542,10 +619,10 @@ def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = 
                 "before starting appfix work"
             )
 
-    # Check: In autonomous mode (godo or appfix), browser verification is ALWAYS required
-    # (regardless of code_changes_made - all changes need verification)
-    if is_autonomous_mode(cwd):
-        # Artifact-based verification is MANDATORY - booleans alone are NOT sufficient
+    # Check: In autonomous mode (godo or appfix), browser verification required for APP code
+    # Infrastructure-only changes (hooks, skills, scripts) don't have web UI to test
+    if is_autonomous_mode(cwd) and has_app_code:
+        # Artifact-based verification is MANDATORY for application code changes
         # Check for Surf CLI artifacts in .claude/web-smoke/
         artifact_valid, artifact_errors = validate_web_smoke_artifacts(cwd)
 
@@ -698,11 +775,21 @@ def block_with_continuation(failures: list[str], cwd: str = "") -> None:
     current_version = get_code_version(cwd)
     version_info = f"Current version: {current_version}" if current_version != "unknown" else "Run: git rev-parse --short HEAD"
 
+    # Check for worktree context
+    worktree_info = get_worktree_info(cwd)
+    worktree_banner = ""
+    if worktree_info and worktree_info.get("is_claude_worktree"):
+        worktree_banner = f"""
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  WORKTREE: {worktree_info['agent_id']:<20} BRANCH: {worktree_info['branch']:<30}│
+└─────────────────────────────────────────────────────────────────────────────┘
+"""
+
     print(f"""
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║  ❌ COMPLETION CHECKPOINT FAILED - CONTINUE WORKING                           ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
-
+{worktree_banner}
 Your self-report indicates incomplete work:
 
 {failure_list}

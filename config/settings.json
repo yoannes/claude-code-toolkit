@@ -47,14 +47,35 @@
         ]
       }
     ],
-    "PreToolUse": [],
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/plan-mode-enforcer.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/plan-mode-enforcer.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "ExitPlanMode",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
+            "command": "python3 ~/.claude/hooks/plan-mode-tracker.py",
             "timeout": 5
           },
           {

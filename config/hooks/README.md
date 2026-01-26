@@ -29,8 +29,8 @@ is_godo_active(cwd)             # Check if .claude/godo-state.json exists
 is_appfix_active(cwd)           # Check if .claude/appfix-state.json exists
 is_autonomous_mode_active(cwd)  # Check if either godo or appfix is active
 
-# Version tracking (excludes infrastructure paths from dirty hash)
-get_code_version(cwd)           # Returns "abc1234" or "abc1234-dirty-def5678"
+# Version tracking (excludes infrastructure paths from dirty check)
+get_code_version(cwd)           # Returns "abc1234" or "abc1234-dirty" (stable during edits)
 get_diff_hash(cwd)              # Returns 12-char hash of current diff
 
 # Debugging

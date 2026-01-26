@@ -17,9 +17,18 @@ from pathlib import Path
 
 
 def get_code_version(cwd: str = "") -> str:
-    """Get current code version (git HEAD + dirty state hash)."""
+    """
+    Get current code version (git HEAD + dirty indicator).
+
+    Returns format:
+    - "abc1234" - clean commit
+    - "abc1234-dirty" - commit with uncommitted changes (no hash suffix)
+    - "unknown" - not a git repo
+
+    NOTE: The dirty indicator is boolean, NOT a hash. This ensures version
+    stability during development - version only changes at commit boundaries.
+    """
     import subprocess
-    import hashlib
 
     try:
         head = subprocess.run(
@@ -36,9 +45,9 @@ def get_code_version(cwd: str = "") -> str:
             capture_output=True, text=True, timeout=5,
             cwd=cwd or None,
         )
-        if diff.stdout:
-            dirty_hash = hashlib.sha1(diff.stdout.encode()).hexdigest()[:7]
-            return f"{head_hash}-dirty-{dirty_hash}"
+        # Return stable version - no hash suffix for dirty state
+        if diff.stdout.strip():
+            return f"{head_hash}-dirty"
 
         return head_hash
     except (subprocess.TimeoutExpired, FileNotFoundError):

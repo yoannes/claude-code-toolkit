@@ -86,20 +86,25 @@ def get_diff_hash(cwd: str = "") -> str:
 
 def get_code_version(cwd: str = "") -> str:
     """
-    Get current code version (git HEAD + dirty state hash).
+    Get current code version (git HEAD + dirty indicator).
+
+    Returns format:
+    - "abc1234" - clean commit
+    - "abc1234-dirty" - commit with uncommitted changes (no hash suffix)
+    - "unknown" - not a git repo or error
+
+    NOTE: The dirty indicator is boolean, NOT a hash. This ensures version
+    stability during development - version only changes at commit boundaries,
+    not on every file edit. This prevents checkpoint invalidation loops.
 
     Excludes metadata files (lock files, IDE config, .claude/, etc.) from
-    dirty calculation. This prevents version-dependent checkpoint fields
-    from becoming stale when only metadata changes (not actual code).
+    dirty calculation.
 
     Args:
         cwd: Working directory for git command
 
     Returns:
-        Version string in format:
-        - "abc1234" - clean commit
-        - "abc1234-dirty-def5678" - commit with uncommitted code changes
-        - "unknown" - not a git repo or error
+        Version string
     """
     try:
         head = subprocess.run(
@@ -116,9 +121,10 @@ def get_code_version(cwd: str = "") -> str:
             capture_output=True, text=True, timeout=5,
             cwd=cwd or None,
         )
-        if diff.stdout:
-            dirty_hash = hashlib.sha1(diff.stdout.encode()).hexdigest()[:7]
-            return f"{head_hash}-dirty-{dirty_hash}"
+        # Return stable version - no hash suffix for dirty state
+        # This prevents version from changing on every edit
+        if diff.stdout.strip():
+            return f"{head_hash}-dirty"
 
         return head_hash
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -235,3 +241,103 @@ def is_autonomous_mode_active(cwd: str) -> bool:
         True if godo OR appfix mode is active, False otherwise
     """
     return is_godo_active(cwd) or is_appfix_active(cwd)
+
+
+def _find_state_file_path(cwd: str, filename: str) -> Path | None:
+    """Find the path to a state file in .claude/ directory tree.
+
+    Walks up the directory tree to find the state file,
+    similar to how git finds the .git directory.
+
+    Args:
+        cwd: Current working directory path
+        filename: Name of the state file (e.g., 'godo-state.json')
+
+    Returns:
+        Path to state file if found, None otherwise
+    """
+    if cwd:
+        current = Path(cwd).resolve()
+        # Walk up to filesystem root (max 20 levels to prevent infinite loops)
+        for _ in range(20):
+            state_file = current / ".claude" / filename
+            if state_file.exists():
+                return state_file
+            parent = current.parent
+            if parent == current:  # Reached filesystem root
+                break
+            current = parent
+    return None
+
+
+def load_state_file(cwd: str, filename: str) -> dict | None:
+    """Load and parse a state file from .claude/ directory tree.
+
+    Walks up the directory tree to find the state file and parse its JSON contents.
+
+    Args:
+        cwd: Current working directory path
+        filename: Name of the state file (e.g., 'godo-state.json')
+
+    Returns:
+        Parsed JSON contents as dict if found, None otherwise
+    """
+    state_path = _find_state_file_path(cwd, filename)
+    if state_path:
+        try:
+            return json.loads(state_path.read_text())
+        except (json.JSONDecodeError, IOError):
+            return None
+    return None
+
+
+def update_state_file(cwd: str, filename: str, updates: dict) -> bool:
+    """Update a state file with new values (merge, not replace).
+
+    Finds the state file, loads it, merges updates, and writes back.
+
+    Args:
+        cwd: Current working directory path
+        filename: Name of the state file (e.g., 'godo-state.json')
+        updates: Dictionary of key-value pairs to merge into state
+
+    Returns:
+        True if update succeeded, False otherwise
+    """
+    state_path = _find_state_file_path(cwd, filename)
+    if not state_path:
+        return False
+
+    try:
+        # Load existing state
+        state = json.loads(state_path.read_text())
+        # Merge updates
+        state.update(updates)
+        # Write back
+        state_path.write_text(json.dumps(state, indent=2))
+        return True
+    except (json.JSONDecodeError, IOError):
+        return False
+
+
+def get_autonomous_state(cwd: str) -> tuple[dict | None, str | None]:
+    """Get the autonomous mode state file and its type.
+
+    Checks for godo-state.json first, then appfix-state.json.
+
+    Args:
+        cwd: Current working directory path
+
+    Returns:
+        Tuple of (state_dict, state_type) where state_type is 'godo' or 'appfix'
+        Returns (None, None) if no state file found
+    """
+    godo_state = load_state_file(cwd, "godo-state.json")
+    if godo_state:
+        return godo_state, "godo"
+
+    appfix_state = load_state_file(cwd, "appfix-state.json")
+    if appfix_state:
+        return appfix_state, "appfix"
+
+    return None, None

@@ -457,7 +457,10 @@ git rev-parse --short HEAD
 
 **Version format**:
 - Clean commit: `abc1234`
-- With uncommitted changes: `abc1234-dirty-def5678`
+- With uncommitted changes: `abc1234-dirty`
+
+NOTE: The dirty indicator is boolean, not a hash. Version stays stable during
+edits and only changes at commit boundaries (prevents checkpoint invalidation loops).
 
 ---
 
