@@ -343,6 +343,58 @@ def get_autonomous_state(cwd: str) -> tuple[dict | None, str | None]:
     return None, None
 
 
+def cleanup_autonomous_state(cwd: str) -> list[str]:
+    """Clean up ALL autonomous mode state files.
+
+    Removes state files from:
+    1. User-level (~/.claude/)
+    2. ALL .claude/ directories walking UP from cwd
+
+    This function should be called after a successful stop to prevent
+    stale state files from affecting subsequent sessions.
+
+    Args:
+        cwd: Current working directory to start walk-up from
+
+    Returns:
+        List of file paths that were deleted
+    """
+    deleted = []
+    state_files = ["appfix-state.json", "godo-state.json"]
+
+    # 1. Clean user-level state
+    user_claude_dir = Path.home() / ".claude"
+    for filename in state_files:
+        user_state = user_claude_dir / filename
+        if user_state.exists():
+            try:
+                user_state.unlink()
+                deleted.append(str(user_state))
+            except (IOError, OSError):
+                pass  # Best effort cleanup
+
+    # 2. Walk UP directory tree and clean ALL project-level state files
+    if cwd:
+        current = Path(cwd).resolve()
+        for _ in range(20):  # Max depth to prevent infinite loops
+            claude_dir = current / ".claude"
+            if claude_dir.exists():
+                for filename in state_files:
+                    state_file = claude_dir / filename
+                    if state_file.exists():
+                        try:
+                            state_file.unlink()
+                            deleted.append(str(state_file))
+                        except (IOError, OSError):
+                            pass  # Best effort cleanup
+            parent = current.parent
+            if parent == current:  # Reached filesystem root
+                break
+            current = parent
+
+    return deleted
+
+
 # ============================================================================
 # Worktree Detection
 # ============================================================================

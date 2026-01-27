@@ -35,6 +35,7 @@ from _common import (
     log_debug,
     get_diff_hash,
     load_checkpoint,
+    cleanup_autonomous_state,
 )
 from _sv_validators import (
     validate_checkpoint,
@@ -249,6 +250,14 @@ def main():
 
         # Checkpoint valid - allow stop on first try if everything is complete
         log_debug("ALLOWING STOP: checkpoint valid on first stop", hook_name="stop-validator")
+        # Clean up state files to prevent stale state affecting future sessions
+        deleted = cleanup_autonomous_state(cwd)
+        if deleted:
+            log_debug(
+                "Cleaned up state files on successful stop",
+                hook_name="stop-validator",
+                parsed_data={"deleted": deleted}
+            )
         sys.exit(0)
 
     # =========================================================================
@@ -276,6 +285,14 @@ def main():
         hook_name="stop-validator",
         parsed_data={"checkpoint": checkpoint}
     )
+    # Clean up state files to prevent stale state affecting future sessions
+    deleted = cleanup_autonomous_state(cwd)
+    if deleted:
+        log_debug(
+            "Cleaned up state files on successful stop",
+            hook_name="stop-validator",
+            parsed_data={"deleted": deleted}
+        )
     sys.exit(0)
 
 

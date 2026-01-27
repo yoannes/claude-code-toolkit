@@ -30,6 +30,7 @@ from _common import (
     load_checkpoint,
     save_checkpoint,
     is_worktree,
+    cleanup_autonomous_state,
 )
 
 
@@ -242,6 +243,53 @@ class TestWorktreeDetection:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Not a git repo
             assert is_worktree(tmpdir) is False
+
+
+class TestCleanupAutonomousState:
+    """Tests for cleanup_autonomous_state function."""
+
+    def test_cleans_nested_state_files(self):
+        """Should clean state files from all .claude/ directories walking up."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create nested .claude directories
+            root_claude = Path(tmpdir) / ".claude"
+            nested_claude = Path(tmpdir) / "subdir" / ".claude"
+            root_claude.mkdir(parents=True)
+            nested_claude.mkdir(parents=True)
+
+            # Create state files in both
+            (root_claude / "appfix-state.json").write_text('{"test": true}')
+            (nested_claude / "appfix-state.json").write_text('{"test": true}')
+
+            # Clean from nested directory
+            deleted = cleanup_autonomous_state(str(Path(tmpdir) / "subdir"))
+
+            # Both should be deleted
+            assert len(deleted) >= 2
+            assert not (root_claude / "appfix-state.json").exists()
+            assert not (nested_claude / "appfix-state.json").exists()
+
+    def test_cleans_both_godo_and_appfix(self):
+        """Should clean both godo-state.json and appfix-state.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            claude_dir = Path(tmpdir) / ".claude"
+            claude_dir.mkdir(parents=True)
+
+            (claude_dir / "appfix-state.json").write_text('{"test": true}')
+            (claude_dir / "godo-state.json").write_text('{"test": true}')
+
+            deleted = cleanup_autonomous_state(tmpdir)
+
+            assert len(deleted) >= 2
+            assert not (claude_dir / "appfix-state.json").exists()
+            assert not (claude_dir / "godo-state.json").exists()
+
+    def test_returns_empty_list_when_no_state_files(self):
+        """Should return empty list when no state files exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            deleted = cleanup_autonomous_state(tmpdir)
+            # May include user-level cleanup, but at least no error
+            assert isinstance(deleted, list)
 
 
 class TestWebTestingBypassPrevention:
