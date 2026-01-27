@@ -32,12 +32,12 @@ Complete guide for deploying through the Motium environment pipeline: **Local ‚Ü
 
 ## Environment Details
 
-| Environment | Database | Subscription | Purpose |
-|-------------|----------|--------------|---------|
-| **Local** | `localhost:5432/motium` (Docker) | N/A | Offline development |
-| **Dev** | `pg-motium-dev.postgres.database.azure.com` | `sub-motium-applications-dev` | Auto-deploy, CI verification |
-| **Test** | `pg-motium-test.postgres.database.azure.com` | `sub-motium-applications-dev` | Pre-prod validation (prod clone) |
-| **Prod** | `pg-motium-prod.postgres.database.azure.com` | `sub-motium-applications-prod` | Production, live users |
+| Environment | Database | Subscription | Resource Group | Purpose |
+|-------------|----------|--------------|----------------|---------|
+| **Local** | `localhost:5432/motium` (Docker) | N/A | N/A | Offline development |
+| **Dev** | `pg-motium-dev.postgres.database.azure.com` | `sub-motium-applications-dev` | `rg-motium-dev` | Auto-deploy, CI verification |
+| **Test** | `pg-motium-test.postgres.database.azure.com` | `sub-motium-applications-dev` | `rg-motium-dev` | Pre-prod validation (prod clone) |
+| **Prod** | `pg-motium-prod.postgres.database.azure.com` | `sub-motium-applications-prod` | `rg-motium-prod` | Production, live users |
 
 ### Container Apps per Environment
 
@@ -47,12 +47,31 @@ Complete guide for deploying through the Motium environment pipeline: **Local ‚Ü
 | Cortex Web | `aca-motium-cortex-web-dev` | `aca-motium-cortex-web-test` | `aca-motium-cortex-web-prod` |
 | Backend | `aca-motium-backend-dev` | `aca-motium-backend-test` | `aca-motium-backend-prod` |
 
+### Azure Subscriptions & Resource Groups
+
+| Subscription | ID | Resource Group | Contains |
+|-------------|-----|----------------|----------|
+| `sub-motium-applications-dev` | `250423f6-1a79-4c0b-bddb-885fbfa85b53` | `rg-motium-dev` | Dev + Test container apps, `crmotiumdev` ACR |
+| `sub-motium-applications-prod` | *(check az account list)* | `rg-motium-prod` | Prod container apps, `acrmotiumprod` ACR |
+
+### ACR (Azure Container Registry)
+
+| Registry | URL | Used By | Notes |
+|----------|-----|---------|-------|
+| `acrmotiumprod` | `acrmotiumprod.azurecr.io` | CI/CD (all envs) | **Primary** - CI pushes all images here |
+| `crmotiumdev` | `crmotiumdev.azurecr.io` | `deploy.sh` (broken for prod) | Legacy - deploy.sh uses this but CI doesn't |
+
+> **WARNING**: The `cortex/scripts/deploy.sh` script is **broken for prod deployments**. It uses `crmotiumdev` ACR and `rg-motium-dev` resource group for all environments. For prod, use `az containerapp update` directly (see Stage 4).
+
 ### URLs
 
 | Service | Dev | Prod |
 |---------|-----|------|
 | Cortex Web | `https://dev.cortex.motium.ai` | `https://cortex.motium.ai` |
 | Cortex API | `https://api.dev.cortex.motium.ai` | `https://api.cortex.motium.ai` |
+| Cortex API (FQDN) | `aca-motium-cortex-api-dev.lemonbay-*.westeurope.azurecontainerapps.io` | `aca-motium-cortex-api-prod.delightfulforest-1c770ae5.westeurope.azurecontainerapps.io` |
+
+> **NOTE**: Custom domains (`api.cortex.motium.ai`) may have intermittent TLS issues. For health checks, use the Azure FQDN directly.
 
 ---
 
@@ -213,13 +232,14 @@ uv run python -m app.cli.main sync-matches --from prod --to test
 
 ### Deploy to Test
 
-Test deployment is **manual** (not auto-triggered):
+Test deployment is **manual** (not auto-triggered). Test apps are in `rg-motium-dev` (same resource group as dev, same subscription):
 
 ```bash
-# Option 1: Deploy specific image from dev
+# Option 1: Deploy specific image from dev (test is in rg-motium-dev, NOT rg-motium-test!)
 az containerapp update \
   --name aca-motium-cortex-api-test \
-  --resource-group rg-motium-test \
+  --resource-group rg-motium-dev \
+  --subscription sub-motium-applications-dev \
   --image acrmotiumprod.azurecr.io/cortex-api:$GIT_SHA
 
 # Option 2: Build and deploy fresh
@@ -285,13 +305,18 @@ gh workflow run cortex-frontend-ci.yml -f environment=production
 gh run watch --exit-status
 
 # Backend API - can use az CLI (no build-time secrets)
+# NOTE: CI already pushes images to acrmotiumprod for all envs.
+# Use the FULL commit SHA as the image tag (CI uses github.sha).
 gh workflow run cortex-backend-ci.yml -f environment=production
-# OR manually with tested image:
+# OR manually with tested image (MUST specify --subscription for prod!):
 az containerapp update \
   --name aca-motium-cortex-api-prod \
   --resource-group rg-motium-prod \
-  --image acrmotiumprod.azurecr.io/cortex-api:$TESTED_SHA
+  --subscription sub-motium-applications-prod \
+  --image acrmotiumprod.azurecr.io/cortex-api:$(git rev-parse HEAD)
 ```
+
+> **WARNING**: Do NOT use `cortex/scripts/deploy.sh --env=prod`. The script uses the wrong subscription (`sub-motium-applications-dev`), resource group, and ACR (`crmotiumdev`). Use the `az containerapp update` command above instead.
 
 ### ‚ùå WRONG: Deploying Dev Image to Prod
 
@@ -345,11 +370,12 @@ gh run watch --exit-status
 ### Post-Deployment Verification
 
 ```bash
-# 1. Health checks
-curl https://cortex.motium.ai/api/health
+# 1. Health checks (use FQDN - custom domain may have intermittent TLS issues)
+curl https://aca-motium-cortex-api-prod.delightfulforest-1c770ae5.westeurope.azurecontainerapps.io/health
+# Or try custom domain (may fail with SSL reset):
 curl https://api.cortex.motium.ai/health
 
-# 2. Smoke tests (manual)
+# 2. Smoke tests (manual or via Chrome MCP on cortex.motium.ai)
 # - Login works
 # - Dashboard loads
 # - Data displays correctly
@@ -357,26 +383,46 @@ curl https://api.cortex.motium.ai/health
 # 3. Monitor Logfire
 # https://logfire.pydantic.dev/?project=cortex-prod
 
-# 4. Check container health
-az containerapp show --name aca-motium-cortex-api-prod --resource-group rg-motium-prod \
+# 4. Check container health (MUST specify subscription)
+az containerapp show --name aca-motium-cortex-api-prod \
+  --resource-group rg-motium-prod \
+  --subscription sub-motium-applications-prod \
   --query "properties.provisioningState"
+
+# 5. Verify correct image is running
+az containerapp show --name aca-motium-cortex-api-prod \
+  --resource-group rg-motium-prod \
+  --subscription sub-motium-applications-prod \
+  --query "properties.template.containers[0].image" -o tsv
 ```
 
 ### Rollback Procedure
 
 ```bash
-# 1. Get previous revision
+# 1. Get previous revision (MUST specify subscription for prod)
 az containerapp revision list --name aca-motium-cortex-api-prod \
-  --resource-group rg-motium-prod --query "[].name" -o tsv
+  --resource-group rg-motium-prod --subscription sub-motium-applications-prod \
+  --query "[].name" -o tsv
 
 # 2. Activate previous revision
 az containerapp revision activate --name aca-motium-cortex-api-prod \
-  --resource-group rg-motium-prod --revision <previous-revision>
+  --resource-group rg-motium-prod --subscription sub-motium-applications-prod \
+  --revision <previous-revision>
 
 # 3. Deactivate broken revision
 az containerapp revision deactivate --name aca-motium-cortex-api-prod \
-  --resource-group rg-motium-prod --revision <broken-revision>
+  --resource-group rg-motium-prod --subscription sub-motium-applications-prod \
+  --revision <broken-revision>
 ```
+
+### CI Migration Gap
+
+> **IMPORTANT**: CI/CD does NOT run Alembic migrations. When deploying schema changes:
+> 1. Run migration SQL manually via MCP postgres tools (`query_cortex_dev`, `query_prod`)
+> 2. Or SSH/exec into the container and run `alembic upgrade head`
+> 3. Always run migrations BEFORE deploying the new code that depends on them
+> 4. For cortex schema on dev: use `query_cortex_dev()`
+> 5. For cortex schema on prod: use `query_prod("SET search_path TO cortex; ...")`
 
 ---
 
@@ -415,12 +461,16 @@ git add -A && git commit -m "feat: new feature" && git push
 # 3. Watch CI
 gh run watch --exit-status
 
-# 4. TEST: Sync data and deploy
+# 4. TEST: Sync data and deploy (test apps are in rg-motium-dev!)
 uv run python -m app.cli.main pull-data --from prod --to test
-az containerapp update --name aca-motium-cortex-api-test -g rg-motium-test --image acrmotiumprod.azurecr.io/cortex-api:$(git rev-parse --short HEAD)
+az containerapp update --name aca-motium-cortex-api-test -g rg-motium-dev \
+  --subscription sub-motium-applications-dev \
+  --image acrmotiumprod.azurecr.io/cortex-api:$(git rev-parse HEAD)
 
-# 5. PROD: Deploy after test validation
-az containerapp update --name aca-motium-cortex-api-prod -g rg-motium-prod --image acrmotiumprod.azurecr.io/cortex-api:$(git rev-parse --short HEAD)
+# 5. PROD: Deploy after test validation (prod apps in rg-motium-prod, different subscription!)
+az containerapp update --name aca-motium-cortex-api-prod -g rg-motium-prod \
+  --subscription sub-motium-applications-prod \
+  --image acrmotiumprod.azurecr.io/cortex-api:$(git rev-parse HEAD)
 ```
 
 ---

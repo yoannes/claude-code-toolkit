@@ -126,6 +126,29 @@ Stop
     └─► stop-validator.py (validates checkpoint)
 ```
 
+## Testing
+
+Three levels of tests verify hook behavior:
+
+```bash
+# Level 1: Pytest subprocess tests (fast, no API cost)
+cd prompts && python3 -m pytest config/hooks/tests/test_plan_mode_hooks.py -v
+
+# Level 2: Claude headless E2E (real sessions, ~$0.05-0.15)
+cd prompts && bash scripts/test-e2e-headless.sh
+
+# Level 3: tmux interactive E2E (manual observation)
+cd prompts && bash scripts/test-e2e-tmux.sh --observe
+```
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `tests/test_plan_mode_hooks.py` | 24 | Enforcer, tracker, initializer, full chain |
+| `scripts/test-e2e-headless.sh` | 5 | Real Claude sessions via `claude -p` |
+| `scripts/test-e2e-tmux.sh` | 3 | Interactive sessions with tmux |
+
+The pytest tests run hooks as subprocesses with simulated JSON stdin and isolated temp directories. The E2E tests verify hooks work end-to-end in real Claude Code sessions.
+
 ## Related Documentation
 
 - [Hook System Deep Dive](../../docs/concepts/hooks.md)

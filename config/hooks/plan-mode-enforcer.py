@@ -64,6 +64,18 @@ def is_plan_file(file_path: str) -> bool:
     return "/plans/" in file_path or file_path.endswith("/plans")
 
 
+def is_workflow_artifact(file_path: str) -> bool:
+    """Check if the file is a .claude/ workflow artifact that should always be allowed.
+
+    Files under .claude/ are internal workflow state (checkpoints, validation tests,
+    web smoke artifacts, state files) — NOT code changes. Blocking these during plan
+    mode causes the recurring issue where appfix cannot write its own artifacts.
+    """
+    if not file_path:
+        return False
+    return "/.claude/" in file_path or file_path.startswith(".claude/")
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -85,6 +97,17 @@ def main():
     # This allows Claude to write its implementation plan
     if is_plan_file(file_path):
         sys.exit(0)  # Allow plan file writes
+
+    # Always allow writes to .claude/ workflow artifacts (checkpoints, validation
+    # tests, state files, web smoke results). These are NOT code changes — they are
+    # internal appfix/godo state that must be writable at any point in the workflow.
+    if is_workflow_artifact(file_path):
+        log_debug(
+            f"Allowing {tool_name} to .claude/ workflow artifact",
+            hook_name="plan-mode-enforcer",
+            parsed_data={"file_path": file_path},
+        )
+        sys.exit(0)  # Allow .claude/ writes
 
     # Only process if autonomous mode is active (godo or appfix)
     if not is_autonomous_mode_active(cwd):
