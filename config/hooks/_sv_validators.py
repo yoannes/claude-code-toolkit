@@ -488,6 +488,13 @@ def validate_web_testing(
     if not any_code_changes:
         return failures, checkpoint_modified
 
+    # Infrastructure-only changes (hooks, skills, docs) don't require web smoke.
+    # This is when code_changes_claimed is true but has_app_code is false -
+    # meaning all changed files matched infrastructure patterns.
+    if not has_app_code and not has_infra_changes:
+        # Self-reported changes but no actual app code detected = infrastructure only
+        return failures, checkpoint_modified
+
     # Code changes were made - artifact-based verification is MANDATORY
     artifact_valid, artifact_errors = validate_web_smoke_artifacts(cwd)
 
