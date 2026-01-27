@@ -174,6 +174,10 @@ def _check_state_file(cwd: str, filename: str) -> bool:
     Walks up the directory tree to find the state file,
     similar to how git finds the .git directory.
 
+    IMPORTANT: Stops at the home directory to avoid picking up unrelated
+    state files from ~/.claude/ which is meant for global config, not
+    project-specific state.
+
     Args:
         cwd: Current working directory path
         filename: Name of the state file (e.g., 'appfix-state.json')
@@ -183,8 +187,12 @@ def _check_state_file(cwd: str, filename: str) -> bool:
     """
     if cwd:
         current = Path(cwd).resolve()
-        # Walk up to filesystem root (max 20 levels to prevent infinite loops)
+        home = Path.home()
+        # Walk up to home directory (max 20 levels to prevent infinite loops)
         for _ in range(20):
+            # Stop at home directory - ~/.claude/ is for global config, not project state
+            if current == home:
+                break
             state_file = current / ".claude" / filename
             if state_file.exists():
                 return True
@@ -253,6 +261,10 @@ def _find_state_file_path(cwd: str, filename: str) -> Path | None:
     Walks up the directory tree to find the state file,
     similar to how git finds the .git directory.
 
+    IMPORTANT: Stops at the home directory to avoid picking up unrelated
+    state files from ~/.claude/ which is meant for global config, not
+    project-specific state.
+
     Args:
         cwd: Current working directory path
         filename: Name of the state file (e.g., 'godo-state.json')
@@ -262,8 +274,12 @@ def _find_state_file_path(cwd: str, filename: str) -> Path | None:
     """
     if cwd:
         current = Path(cwd).resolve()
-        # Walk up to filesystem root (max 20 levels to prevent infinite loops)
+        home = Path.home()
+        # Walk up to home directory (max 20 levels to prevent infinite loops)
         for _ in range(20):
+            # Stop at home directory - ~/.claude/ is for global config, not project state
+            if current == home:
+                break
             state_file = current / ".claude" / filename
             if state_file.exists():
                 return state_file
