@@ -23,10 +23,12 @@ VERSION_TRACKING_EXCLUSIONS = [
     # Base path required for exclude patterns to work correctly
     ".",
     # .claude directory at any depth (checkpoint files, state files)
+    # Use ** for recursive matching across directory boundaries
+    # (single * only matches one path component, missing nested paths like config/hooks/.claude/)
     ":(exclude).claude",
-    ":(exclude).claude/*",
-    ":(exclude)*/.claude",
-    ":(exclude)*/.claude/*",
+    ":(exclude).claude/**",
+    ":(exclude)**/.claude",
+    ":(exclude)**/.claude/**",
     # Lock files
     ":(exclude)*.lock",
     ":(exclude)package-lock.json",
