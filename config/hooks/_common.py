@@ -341,3 +341,132 @@ def get_autonomous_state(cwd: str) -> tuple[dict | None, str | None]:
         return appfix_state, "appfix"
 
     return None, None
+
+
+# ============================================================================
+# Worktree Detection
+# ============================================================================
+
+def is_worktree(cwd: str = "") -> bool:
+    """Check if the current directory is a git worktree (not the main repo).
+
+    A worktree is a linked working directory managed by git worktree commands.
+    This is used to detect if we're in a parallel agent isolation directory.
+
+    Args:
+        cwd: Working directory to check
+
+    Returns:
+        True if in a worktree, False if in main repo or error
+    """
+    try:
+        git_dir = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        git_common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        # If git-dir != git-common-dir, this is a linked worktree
+        return git_dir.stdout.strip() != git_common.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def get_worktree_info(cwd: str = "") -> dict | None:
+    """Get information about the current worktree if in one.
+
+    Args:
+        cwd: Working directory to check
+
+    Returns:
+        Dict with worktree info if in a worktree:
+        - branch: current branch name
+        - agent_id: agent ID if this is a Claude worktree
+        - path: worktree root path
+        - is_claude_worktree: True if has agent state file
+        Returns None if not in a worktree
+    """
+    if not is_worktree(cwd):
+        return None
+    try:
+        # Get the branch name
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+        branch_name = branch.stdout.strip()
+
+        # Get worktree path
+        worktree_path = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd or None,
+        )
+
+        # Check for agent state file
+        state_file = Path(worktree_path.stdout.strip()) / ".claude" / "worktree-agent-state.json"
+        agent_id = None
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text())
+                agent_id = state.get("agent_id")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        return {
+            "branch": branch_name,
+            "agent_id": agent_id,
+            "path": worktree_path.stdout.strip(),
+            "is_claude_worktree": agent_id is not None,
+        }
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+# ============================================================================
+# Checkpoint File Operations
+# ============================================================================
+
+def load_checkpoint(cwd: str) -> dict | None:
+    """Load completion checkpoint file from .claude directory.
+
+    Args:
+        cwd: Working directory containing .claude/
+
+    Returns:
+        Parsed checkpoint dict if exists and valid, None otherwise
+    """
+    if not cwd:
+        return None
+    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json"
+    if not checkpoint_path.exists():
+        return None
+    try:
+        return json.loads(checkpoint_path.read_text())
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def save_checkpoint(cwd: str, checkpoint: dict) -> bool:
+    """Save checkpoint file back to disk.
+
+    Args:
+        cwd: Working directory containing .claude/
+        checkpoint: Checkpoint dict to save
+
+    Returns:
+        True if save succeeded, False otherwise
+    """
+    if not cwd:
+        return False
+    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json"
+    try:
+        checkpoint_path.write_text(json.dumps(checkpoint, indent=2))
+        return True
+    except IOError:
+        return False

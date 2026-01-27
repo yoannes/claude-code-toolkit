@@ -17,540 +17,42 @@ Worktree Support:
 Exit codes:
   0 - Allow stop
   2 - Block stop (stderr shown to Claude)
+
+Module Structure:
+- _common.py: Shared utilities (git, state files, logging)
+- _sv_validators.py: Validation logic (sub-validators, artifact checks)
+- _sv_templates.py: Blocking message templates
 """
-import hashlib
 import json
 import os
 import sys
-import subprocess
-import tempfile
-from datetime import datetime
 from pathlib import Path
 
-# Debug logging
-DEBUG_LOG = Path(tempfile.gettempdir()) / "stop-hook-debug.log"
+# Add hooks directory to path for sibling imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _common import (
+    log_debug,
+    get_diff_hash,
+    load_checkpoint,
+)
+from _sv_validators import (
+    validate_checkpoint,
+    get_git_diff_files,
+    has_code_changes,
+)
+from _sv_templates import (
+    block_no_checkpoint,
+    block_with_continuation,
+)
 
 
 # ============================================================================
-# Worktree Detection
+# Mode Detection
 # ============================================================================
-
-def is_worktree(cwd: str = "") -> bool:
-    """Check if the current directory is a git worktree (not the main repo)."""
-    try:
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-        git_common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-        # If git-dir != git-common-dir, this is a linked worktree
-        return git_dir.stdout.strip() != git_common.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
-
-
-def get_worktree_info(cwd: str = "") -> dict | None:
-    """Get information about the current worktree if in one."""
-    if not is_worktree(cwd):
-        return None
-    try:
-        # Get the branch name
-        branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-        branch_name = branch.stdout.strip()
-
-        # Get worktree path
-        worktree_path = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-
-        # Check for agent state file
-        state_file = Path(worktree_path.stdout.strip()) / ".claude" / "worktree-agent-state.json"
-        agent_id = None
-        if state_file.exists():
-            try:
-                state = json.loads(state_file.read_text())
-                agent_id = state.get("agent_id")
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        return {
-            "branch": branch_name,
-            "agent_id": agent_id,
-            "path": worktree_path.stdout.strip(),
-            "is_claude_worktree": agent_id is not None,
-        }
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return None
-
-
-# ============================================================================
-# Configuration
-# ============================================================================
-
-# Files/patterns excluded from version tracking (dirty calculation)
-# These don't represent code changes requiring re-deployment
-# IMPORTANT: Use both root and nested patterns for directories like .claude/
-# because :(exclude).claude/ only matches at root, not nested paths
-VERSION_TRACKING_EXCLUSIONS = [
-    # Base path required for exclude patterns to work correctly
-    ".",
-    # .claude directory at any depth (checkpoint files, state files)
-    ":(exclude).claude",
-    ":(exclude).claude/*",
-    ":(exclude)*/.claude",
-    ":(exclude)*/.claude/*",
-    # Lock files
-    ":(exclude)*.lock",
-    ":(exclude)package-lock.json",
-    ":(exclude)yarn.lock",
-    ":(exclude)pnpm-lock.yaml",
-    ":(exclude)poetry.lock",
-    ":(exclude)Pipfile.lock",
-    ":(exclude)Cargo.lock",
-    # Git metadata
-    ":(exclude).gitmodules",
-    # Python artifacts
-    ":(exclude)*.pyc",
-    ":(exclude)__pycache__",
-    ":(exclude)*/__pycache__",
-    # Environment and logs
-    ":(exclude).env*",
-    ":(exclude)*.log",
-    # OS and editor artifacts
-    ":(exclude).DS_Store",
-    ":(exclude)*.swp",
-    ":(exclude)*.swo",
-    ":(exclude)*.orig",
-    ":(exclude).idea",
-    ":(exclude).idea/*",
-    ":(exclude).vscode",
-    ":(exclude).vscode/*",
-]
-
-
-def log_debug(message: str, raw_input: str = "", parsed_data: dict | None = None) -> None:
-    """Log diagnostic info for debugging."""
-    try:
-        with open(DEBUG_LOG, "a") as f:
-            f.write(f"\n{'='*60}\n")
-            f.write(f"Timestamp: {datetime.now().isoformat()}\n")
-            f.write(f"Message: {message}\n")
-            if raw_input:
-                f.write(f"Raw stdin ({len(raw_input)} bytes): {repr(raw_input)}\n")
-            if parsed_data is not None:
-                f.write(f"Parsed data: {json.dumps(parsed_data, indent=2)}\n")
-            f.write(f"{'='*60}\n")
-    except Exception:
-        pass
-
-
-def get_git_diff_files() -> list[str]:
-    """Get list of modified files (staged + unstaged)."""
-    try:
-        staged = subprocess.run(
-            ["git", "diff", "--cached", "--name-only"],
-            capture_output=True, text=True, timeout=5,
-        )
-        unstaged = subprocess.run(
-            ["git", "diff", "--name-only"],
-            capture_output=True, text=True, timeout=5,
-        )
-        staged_files = [f for f in staged.stdout.strip().split("\n") if f]
-        unstaged_files = [f for f in unstaged.stdout.strip().split("\n") if f]
-        return list(set(staged_files + unstaged_files))
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return []
-
-
-def has_code_changes(files: list[str]) -> bool:
-    """Check if any application code files were modified (not infrastructure/toolkit).
-
-    Excludes:
-    - Claude Code hooks, skills, commands (config/hooks/, config/skills/, config/commands/)
-    - .claude/ directory files
-    - Documentation and scripts in prompts/ directory
-    """
-    code_extensions = {'.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs', '.java', '.rb', '.php'}
-    # Infrastructure paths that don't require deployment
-    # These are tooling, documentation utilities, not deployed application code
-    infrastructure_patterns = [
-        'config/hooks/',
-        'config/skills/',
-        'config/commands/',
-        '.claude/',
-        'prompts/config/',
-        'prompts/scripts/',
-        'scripts/',  # Documentation processing scripts
-    ]
-    for f in files:
-        # Skip infrastructure/toolkit files
-        if any(pattern in f for pattern in infrastructure_patterns):
-            continue
-        ext = Path(f).suffix.lower()
-        if ext in code_extensions:
-            return True
-    return False
-
-
-def has_frontend_changes(files: list[str]) -> bool:
-    """Check if any frontend files were modified."""
-    frontend_patterns = ['.tsx', '.jsx', 'components/', 'app/', 'pages/']
-    # Hooks pattern needs special handling - only match src/hooks, not config/hooks
-    hooks_pattern = 'src/hooks/'
-
-    for f in files:
-        for pattern in frontend_patterns:
-            if pattern in f or f.endswith(pattern.rstrip('/')):
-                return True
-        # Check for React hooks specifically (src/hooks), not Claude Code hooks (config/hooks)
-        if hooks_pattern in f:
-            return True
-    return False
-
-
-def get_diff_hash(cwd: str = "") -> str:
-    """
-    Get hash of current git diff (excluding metadata files).
-
-    Used to detect if THIS session made changes by comparing against
-    the snapshot taken at session start.
-
-    Excludes lock files, IDE config, and other non-code files that
-    shouldn't affect version tracking.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "diff", "HEAD", "--"] + VERSION_TRACKING_EXCLUSIONS,
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-        return hashlib.sha1(result.stdout.encode()).hexdigest()[:12]
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return "unknown"
-
-
-def get_code_version(cwd: str = "") -> str:
-    """
-    Get current code version (git HEAD + dirty indicator).
-
-    Returns format:
-    - "abc1234" - clean commit
-    - "abc1234-dirty" - commit with uncommitted changes (no hash suffix)
-    - "unknown" - not a git repo
-
-    NOTE: The dirty indicator is boolean, NOT a hash. This ensures version
-    stability during development - version only changes at commit boundaries,
-    not on every file edit. This prevents checkpoint invalidation loops.
-
-    Excludes metadata files (lock files, IDE config, .claude/, etc.) from
-    dirty calculation.
-    """
-    try:
-        head = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-        head_hash = head.stdout.strip()
-        if not head_hash:
-            return "unknown"
-
-        diff = subprocess.run(
-            ["git", "diff", "HEAD", "--"] + VERSION_TRACKING_EXCLUSIONS,
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd or None,
-        )
-        # Return stable version - no hash suffix for dirty state
-        # This prevents version from changing on every edit
-        if diff.stdout.strip():
-            return f"{head_hash}-dirty"
-
-        return head_hash
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return "unknown"
-
-
-# Fields that are invalidated when code changes after they were set
-# Ordered by dependency: upstream fields come first
-VERSION_DEPENDENT_FIELDS = [
-    "linters_pass",        # Must pass before deploy
-    "deployed",            # Must deploy before testing
-    "web_testing_done",    # Depends on deployed
-    "console_errors_checked",  # Depends on deployed
-    "api_testing_done",    # Depends on deployed
-]
-
-# Health endpoint URL patterns - these don't count as real app pages
-HEALTH_URL_PATTERNS = [
-    '/health', '/healthz', '/api/health', '/ping', '/ready', '/live',
-    '/readiness', '/liveness', '/_health', '/status', '/api/status'
-]
-
-
-def has_real_app_urls(urls: list[str]) -> bool:
-    """
-    Check if any URLs are actual app pages (not just health endpoints).
-
-    Health endpoints like /health, /ping don't prove the app works -
-    they only prove the server is responding. Real verification requires
-    testing actual user-facing pages like /dashboard, /login, etc.
-    """
-    if not urls:
-        return False
-
-    for url in urls:
-        url_lower = url.lower()
-        is_health = any(pattern in url_lower for pattern in HEALTH_URL_PATTERNS)
-        if not is_health:
-            return True
-    return False
-
-# Dependency graph: field -> list of fields it depends on
-# If a dependency is stale, this field is also stale
-FIELD_DEPENDENCIES = {
-    "linters_pass": [],                          # Base field, only depends on code
-    "deployed": ["linters_pass"],                # Can't deploy unlinted code
-    "web_testing_done": ["deployed"],            # Can't test undeployed code
-    "console_errors_checked": ["deployed"],      # Can't check console of undeployed code
-    "api_testing_done": ["deployed"],            # Can't test APIs of undeployed code
-}
-
-
-def load_checkpoint(cwd: str) -> dict | None:
-    """Load completion checkpoint file."""
-    if not cwd:
-        return None
-    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json"
-    if not checkpoint_path.exists():
-        return None
-    try:
-        return json.loads(checkpoint_path.read_text())
-    except (json.JSONDecodeError, IOError):
-        return None
-
-
-def load_web_smoke_waivers(cwd: str) -> dict:
-    """Load waiver patterns for expected errors."""
-    if not cwd:
-        return {"console_patterns": [], "network_patterns": []}
-    waivers_path = Path(cwd) / ".claude" / "web-smoke" / "waivers.json"
-    if not waivers_path.exists():
-        return {"console_patterns": [], "network_patterns": []}
-    try:
-        return json.loads(waivers_path.read_text())
-    except (json.JSONDecodeError, IOError):
-        return {"console_patterns": [], "network_patterns": []}
-
-
-def validate_web_smoke_artifacts(cwd: str) -> tuple[bool, list[str]]:
-    """
-    Check if web smoke artifacts exist and pass conditions.
-
-    This provides ARTIFACT-BASED proof of web verification, replacing
-    the trust-based web_testing_done: true boolean.
-
-    Returns (is_valid, list_of_errors)
-    """
-    errors = []
-    artifact_dir = Path(cwd) / ".claude" / "web-smoke" if cwd else Path(".claude/web-smoke")
-    summary_path = artifact_dir / "summary.json"
-    screenshots_dir = artifact_dir / "screenshots"
-
-    # Check summary exists
-    if not summary_path.exists():
-        errors.append(
-            "web_smoke: No summary.json found. Run Surf verification first:\n"
-            "  python3 ~/.claude/hooks/surf-verify.py --urls 'https://your-app.com'\n"
-            "Or use Chrome MCP and manually create .claude/web-smoke/summary.json"
-        )
-        return False, errors
-
-    try:
-        summary = json.loads(summary_path.read_text())
-    except (json.JSONDecodeError, IOError) as e:
-        errors.append(f"web_smoke: Cannot parse summary.json: {e}")
-        return False, errors
-
-    # Check version freshness (artifacts become stale when code changes)
-    current_version = get_code_version(cwd)
-    tested_version = summary.get("tested_at_version", "")
-    if tested_version and current_version != "unknown" and tested_version != current_version:
-        errors.append(
-            f"web_smoke: Artifacts are STALE - tested at version '{tested_version}', "
-            f"but code is now at '{current_version}'. Code changed since verification.\n"
-            f"Re-run: python3 ~/.claude/hooks/surf-verify.py --urls ..."
-        )
-        return False, errors
-
-    # Check pass status
-    if not summary.get("passed", False):
-        console_errors = summary.get("console_errors", 0)
-        network_errors = summary.get("network_errors", 0)
-        failing_requests = summary.get("failing_requests", [])
-        error_msg = f"web_smoke: Verification FAILED - {console_errors} console errors, {network_errors} network errors"
-        if failing_requests:
-            error_msg += f"\n  Failing requests: {failing_requests[:3]}"  # Show first 3
-            if len(failing_requests) > 3:
-                error_msg += f" ... and {len(failing_requests) - 3} more"
-        errors.append(error_msg)
-        return False, errors
-
-    # Check screenshots exist
-    screenshot_count = summary.get("screenshot_count", 0)
-    if screenshot_count < 1:
-        # Also check filesystem in case summary is outdated
-        actual_screenshots = list(screenshots_dir.glob("*.png")) if screenshots_dir.exists() else []
-        if not actual_screenshots:
-            errors.append(
-                "web_smoke: No screenshots captured. At least 1 screenshot required.\n"
-                "Screenshots prove the page actually loaded and rendered."
-            )
-            return False, errors
-
-    # Check URLs were actually tested
-    urls_tested = summary.get("urls_tested", [])
-    if not urls_tested:
-        errors.append(
-            "web_smoke: urls_tested is empty. You must verify actual URLs.\n"
-            "Add URLs to test in service-topology.md under web_smoke_urls"
-        )
-        return False, errors
-
-    return True, []
-
-
-def validate_fix_specific_tests(cwd: str, checkpoint: dict) -> tuple[bool, list[str]]:
-    """
-    Validate that fix-specific validation tests were defined, executed, and passed.
-
-    In appfix mode, validation tests are REQUIRED to prove the fix worked,
-    not just that the app loads. Tests must:
-    1. Be defined (non-empty tests array)
-    2. All pass (summary.failed == 0)
-    3. Be current version (not stale)
-
-    Returns (is_valid, list_of_errors)
-    """
-    errors = []
-
-    # Only required for appfix mode (not godo - godo is task-agnostic)
-    if not is_appfix_mode(cwd):
-        return True, []
-
-    validation_tests = checkpoint.get("validation_tests", {})
-    tests = validation_tests.get("tests", [])
-
-    # Check if artifact exists
-    artifact_dir = Path(cwd) / ".claude" / "validation-tests" if cwd else Path(".claude/validation-tests")
-    summary_path = artifact_dir / "summary.json"
-
-    # If no tests in checkpoint and no artifact, check if this is a fix scenario
-    # For research/audit tasks (no code changes), validation tests may not be needed
-    report = checkpoint.get("self_report", {})
-    code_changes_made = report.get("code_changes_made", False)
-
-    if not code_changes_made:
-        # No code changes = likely research/audit, validation tests optional
-        return True, []
-
-    # Code changes were made - validation tests are expected
-    if not tests and not summary_path.exists():
-        errors.append(
-            "VALIDATION TESTS REQUIRED: You made code changes but didn't define fix-specific tests.\n"
-            "These tests PROVE the fix worked, not just that the app loads.\n\n"
-            "Ask yourself: 'What would PROVE this specific fix worked?'\n\n"
-            "Example for 'notes summarization fix':\n"
-            "  {\n"
-            '    "id": "notes_summary_populated",\n'
-            '    "description": "Werner Iwens bullhorn_notes_summary_json is NOT NULL",\n'
-            '    "type": "database_query",\n'
-            '    "expected": "NOT NULL"\n'
-            "  }\n\n"
-            "Add tests to .claude/completion-checkpoint.json → validation_tests.tests\n"
-            "Then execute tests and save results to .claude/validation-tests/summary.json"
-        )
-        return False, errors
-
-    # Load artifact if exists (takes precedence over checkpoint)
-    if summary_path.exists():
-        try:
-            summary = json.loads(summary_path.read_text())
-            tests = summary.get("tests", tests)  # Use artifact tests if available
-        except (json.JSONDecodeError, IOError):
-            pass  # Fall back to checkpoint tests
-
-    # Check tests were defined
-    if not tests:
-        errors.append(
-            "VALIDATION TESTS EMPTY: Tests array is empty.\n"
-            "Define at least one test that proves your fix worked."
-        )
-        return False, errors
-
-    # Check for failed tests
-    failed_tests = [t for t in tests if not t.get("passed", False)]
-    if failed_tests:
-        errors.append(
-            f"VALIDATION TESTS FAILED: {len(failed_tests)} of {len(tests)} tests failed.\n"
-            "These failures SURFACE issues that must be fixed before completion.\n"
-        )
-        for test in failed_tests:
-            test_desc = test.get("description", test.get("id", "unknown"))
-            expected = test.get("expected", "?")
-            actual = test.get("actual", "?")
-            errors.append(
-                f"  FAILED: {test_desc}\n"
-                f"    Expected: {expected}\n"
-                f"    Actual:   {actual}\n"
-                f"    -> This issue must be FIXED - continue working!"
-            )
-        return False, errors
-
-    # Check version freshness from artifact
-    if summary_path.exists():
-        try:
-            summary = json.loads(summary_path.read_text())
-            tested_version = summary.get("tested_at_version", "")
-            current_version = get_code_version(cwd)
-            if tested_version and current_version != "unknown" and tested_version != current_version:
-                errors.append(
-                    f"VALIDATION TESTS STALE: Tested at version '{tested_version}', "
-                    f"but code is now at '{current_version}'.\n"
-                    "Re-run validation tests after code changes."
-                )
-                return False, errors
-        except (json.JSONDecodeError, IOError):
-            pass
-
-    return True, []
-
-
-def save_checkpoint(cwd: str, checkpoint: dict) -> bool:
-    """Save checkpoint file back to disk."""
-    if not cwd:
-        return False
-    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json"
-    try:
-        checkpoint_path.write_text(json.dumps(checkpoint, indent=2))
-        return True
-    except IOError:
-        return False
-
 
 def is_appfix_mode(cwd: str = "") -> bool:
-    """
-    Check if appfix mode is active.
+    """Check if appfix mode is active.
 
     Checks user-level state first (~/.claude/appfix-state.json) to handle
     cross-repo scenarios where appfix was started in one repo but work
@@ -573,8 +75,7 @@ def is_appfix_mode(cwd: str = "") -> bool:
 
 
 def is_godo_mode(cwd: str = "") -> bool:
-    """
-    Check if godo mode is active.
+    """Check if godo mode is active.
 
     Checks user-level state first (~/.claude/godo-state.json) to handle
     cross-repo scenarios.
@@ -596,407 +97,19 @@ def is_godo_mode(cwd: str = "") -> bool:
 
 
 def is_autonomous_mode(cwd: str = "") -> bool:
-    """
-    Check if any autonomous execution mode is active (godo or appfix).
+    """Check if any autonomous execution mode is active (godo or appfix).
 
     This unified check determines if strict completion validation applies.
     """
     return is_godo_mode(cwd) or is_appfix_mode(cwd)
 
 
-def get_dependent_fields(field: str) -> list[str]:
-    """
-    Get all fields that depend on a given field (transitively).
-    If field X is stale, all fields that depend on X are also stale.
-    """
-    dependents = []
-    for f, deps in FIELD_DEPENDENCIES.items():
-        if field in deps:
-            dependents.append(f)
-            # Recursively get fields that depend on this dependent
-            dependents.extend(get_dependent_fields(f))
-    return list(set(dependents))
-
-
-def validate_checkpoint(checkpoint: dict, modified_files: list[str], cwd: str = "") -> tuple[bool, list[str]]:
-    """
-    Validate checkpoint booleans deterministically.
-
-    Auto-resets stale version-dependent fields and cascades to dependents.
-    Writes checkpoint back to disk after modifications.
-
-    Returns (is_valid, list_of_failures)
-    """
-    failures = []
-    report = checkpoint.get("self_report", {})
-    reflection = checkpoint.get("reflection", {})
-    checkpoint_modified = False  # Track if we need to save
-    fields_to_reset = set()  # Track all fields that need resetting
-
-    # Phase 1: Identify stale fields based on version mismatch
-    current_version = get_code_version(cwd)
-    for field in VERSION_DEPENDENT_FIELDS:
-        if report.get(field, False):
-            field_version = report.get(f"{field}_at_version", "")
-            if field_version and field_version != current_version:
-                fields_to_reset.add(field)
-                failures.append(
-                    f"{field} is STALE - set at version '{field_version}', "
-                    f"but code is now at '{current_version}'. Code changed since this checkpoint was set. Re-run and update."
-                )
-            elif not field_version and current_version != "unknown":
-                fields_to_reset.add(field)
-                failures.append(
-                    f"{field} is true but missing version tracking - "
-                    f"Re-do and include {field}_at_version."
-                )
-
-    # Phase 2: Cascade to dependent fields
-    # If linters_pass is stale, deployed is also stale (can't deploy unlinted code)
-    # If deployed is stale, web_testing_done is also stale (can't test undeployed code)
-    cascade_fields = set()
-    for stale_field in fields_to_reset:
-        dependents = get_dependent_fields(stale_field)
-        for dep in dependents:
-            if report.get(dep, False) and dep not in fields_to_reset:
-                cascade_fields.add(dep)
-                failures.append(
-                    f"{dep} CASCADE INVALIDATED - depends on {stale_field} which is stale. "
-                    f"Re-do after fixing upstream."
-                )
-
-    fields_to_reset.update(cascade_fields)
-
-    # Phase 3: Reset all identified stale fields
-    for field in fields_to_reset:
-        if report.get(field, False):
-            report[field] = False
-            report[f"{field}_at_version"] = ""
-            checkpoint_modified = True
-
-    # Save modified checkpoint back to disk
-    if checkpoint_modified:
-        save_checkpoint(cwd, checkpoint)
-
-    # Check: is_job_complete must be true
-    if not report.get("is_job_complete", False):
-        failures.append("is_job_complete is false - YOU said the job isn't done")
-
-    # Check for actual APPLICATION code changes (not infrastructure/toolkit)
-    # This determines if deployment, linting, and web testing are required
-    has_app_code = has_code_changes(modified_files)
-    has_frontend = has_frontend_changes(modified_files)
-
-    # Only require web_testing, deployment, linting if APPLICATION code was changed
-    # Infrastructure/toolkit changes (hooks, skills, scripts) don't require these
-    if has_app_code:
-        # Check: web_testing_done required if frontend changes
-        if has_frontend and not report.get("web_testing_done", False):
-            failures.append("web_testing_done is false - frontend changes require browser testing")
-
-        # Check: if app code changes made, should be deployed
-        if not report.get("deployed", False):
-            failures.append("deployed is false - you made application code changes but didn't deploy")
-
-        # Check: console_errors_checked should be true if frontend changes
-        if has_frontend and not report.get("console_errors_checked", False):
-            failures.append("console_errors_checked is false - check browser console for errors")
-
-        # Check: linters_pass required if app code was changed
-        if not report.get("linters_pass", False):
-            failures.append(
-                "linters_pass is false - run linters and fix ALL errors (including pre-existing ones). "
-                "You cannot claim 'these errors aren't related to our code' - fix them ALL"
-            )
-
-        # Check: preexisting_issues_fixed - no excuses allowed
-        if report.get("linters_pass", False) and not report.get("preexisting_issues_fixed", True):
-            # Only check if linters_pass is claimed but preexisting marked false
-            failures.append(
-                "preexisting_issues_fixed is false - you acknowledged pre-existing issues but didn't fix them. "
-                "POLICY: Fix ALL linter errors, no exceptions. 'Not my code' is not an excuse."
-            )
-
-    # Check: docs_read_at_start required for appfix mode (not godo - that's appfix-specific)
-    if is_appfix_mode(cwd):
-        if not report.get("docs_read_at_start", False):
-            failures.append(
-                "docs_read_at_start is false - you must read docs/index.md and TECHNICAL_OVERVIEW.md "
-                "before starting appfix work"
-            )
-
-    # Check: In autonomous mode (godo or appfix), browser verification required for:
-    # 1. Application code changes (has_app_code)
-    # 2. Infrastructure CLI changes (az keyvault, az containerapp, etc.)
-    # The latter is tracked by bash-version-tracker.py which sets az_cli_changes_made
-    has_infra_changes = report.get("az_cli_changes_made", False)
-    if is_autonomous_mode(cwd) and (has_app_code or has_infra_changes):
-        # Artifact-based verification is MANDATORY for application code changes
-        # Check for Surf CLI artifacts in .claude/web-smoke/
-        artifact_valid, artifact_errors = validate_web_smoke_artifacts(cwd)
-
-        if artifact_valid:
-            # Artifacts exist and pass - this is sufficient proof
-            # Auto-set the boolean fields for backward compatibility
-            if not report.get("web_testing_done", False):
-                report["web_testing_done"] = True
-                report["web_testing_done_at_version"] = get_code_version(cwd)
-                checkpoint_modified = True
-            if not report.get("console_errors_checked", False):
-                report["console_errors_checked"] = True
-                report["console_errors_checked_at_version"] = get_code_version(cwd)
-                checkpoint_modified = True
-        else:
-            # NO FALLBACK - artifacts are REQUIRED in autonomous mode
-            # Block REGARDLESS of boolean values - setting web_testing_done: true
-            # without actual proof is NOT allowed
-            failures.append(
-                "web_testing_done requires PROOF via Surf CLI artifacts.\n"
-                "Setting the boolean to true without artifacts is NOT allowed.\n"
-                "Run: python3 ~/.claude/hooks/surf-verify.py --urls 'https://your-app.com'\n"
-                "Or use Chrome MCP and manually create .claude/web-smoke/summary.json with passing results."
-            )
-            # Add artifact error details
-            for err in artifact_errors:
-                failures.append(f"  → {err}")
-
-            # Also fail console_errors_checked since artifacts would have validated this
-            if report.get("console_errors_checked", False):
-                failures.append(
-                    "console_errors_checked is true but no Surf artifacts exist.\n"
-                    "Artifacts provide deterministic proof of console check. Run Surf CLI."
-                )
-            else:
-                failures.append(
-                    "console_errors_checked is false - appfix requires checking browser "
-                    "console for errors. Run Surf CLI for deterministic proof."
-                )
-
-        # Check: urls_tested must contain REAL app pages, not just health endpoints
-        evidence = checkpoint.get("evidence", {})
-        urls_tested = evidence.get("urls_tested", [])
-
-        if report.get("web_testing_done", False):
-            if not urls_tested:
-                failures.append(
-                    "web_testing_done is true but evidence.urls_tested is empty.\n"
-                    "You must actually navigate to the app and record the URLs tested.\n"
-                    "Run Surf CLI which automatically tracks URLs tested."
-                )
-            elif not has_real_app_urls(urls_tested):
-                failures.append(
-                    "urls_tested contains ONLY health endpoints, not actual app pages.\n"
-                    f"URLs found: {urls_tested}\n"
-                    "Health endpoints (/health, /ping, etc.) don't prove the app works.\n"
-                    "You MUST verify real user-facing pages like /dashboard, /login, /profile, etc.\n"
-                    "Run: python3 ~/.claude/hooks/surf-verify.py --urls 'https://your-app.com/dashboard'"
-                )
-
-    # Check: infra PR required if az CLI changes were made
-    if report.get("az_cli_changes_made", False):
-        if not report.get("infra_pr_created", False):
-            failures.append(
-                "infra_pr_created is false - you made infrastructure changes with az CLI but didn't "
-                "create a PR to the infra repo. Sync your changes with IaC files."
-            )
-
-    # Check: Fix-specific validation tests (appfix mode only)
-    # These prove the fix worked, not just that the app loads
-    tests_valid, test_errors = validate_fix_specific_tests(cwd, checkpoint)
-    if not tests_valid:
-        failures.extend(test_errors)
-
-    # Check: what_remains should be empty or "none"
-    what_remains = reflection.get("what_remains", "")
-    if what_remains and what_remains.lower() not in ["none", "nothing", "n/a", ""]:
-        failures.append(f"what_remains is not empty: '{what_remains}'")
-
-    return len(failures) == 0, failures
-
-
-def block_no_checkpoint(cwd: str) -> None:
-    """Block stop - no checkpoint file exists."""
-    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json" if cwd else ".claude/completion-checkpoint.json"
-
-    # Get current version for display
-    current_version = get_code_version(cwd)
-    version_note = f"// Current version: {current_version}" if current_version != "unknown" else ""
-
-    print(f"""
-╔═══════════════════════════════════════════════════════════════════════════════╗
-║  ❌ COMPLETION CHECKPOINT REQUIRED                                            ║
-╚═══════════════════════════════════════════════════════════════════════════════╝
-
-You must create {checkpoint_path} before stopping.
-
-This file requires HONEST self-reporting of what you've done:
-
-{{
-  "self_report": {{
-    "code_changes_made": true,              // Did you modify any code files?
-    "web_testing_done": false,              // Did you verify in browser/Surf?
-    "web_testing_done_at_version": "",      // Version when web testing was done {version_note}
-    "api_testing_done": false,              // Did you test API endpoints?
-    "api_testing_done_at_version": "",      // Version when API testing was done
-    "deployed": false,                      // Did you deploy the changes?
-    "deployed_at_version": "",              // Version when deployed
-    "console_errors_checked": false,        // Did you check browser console?
-    "console_errors_checked_at_version": "",// Version when console was checked
-    "linters_pass": false,                  // Did all linters pass with zero errors?
-    "linters_pass_at_version": "",          // Version when linters passed
-    "docs_updated": false,                  // Did you update relevant docs?
-    "docs_read_at_start": false,            // Did you read project docs first? (appfix)
-    "preexisting_issues_fixed": true,       // Did you fix ALL issues (no "not my code")?
-    "az_cli_changes_made": false,           // Did you run az CLI infrastructure commands?
-    "infra_pr_created": false,              // Did you create PR to infra repo? (if az CLI used)
-    "validation_tests_defined": false,      // Did you define fix-specific tests? (if code changed)
-    "validation_tests_passed": false,       // Did ALL validation tests pass?
-    "validation_tests_passed_at_version": "",// Version when validation tests passed
-    "is_job_complete": false                // Is the job ACTUALLY done?
-  }},
-  "validation_tests": {{                    // Fix-specific tests (REQUIRED if code changed)
-    "tests": [
-      {{
-        "id": "example_test",
-        "description": "What would PROVE this fix worked?",
-        "type": "database_query|api_response|page_content",
-        "expected": "NOT NULL|status=200|CONTAINS text",
-        "actual": "",                       // Fill after executing
-        "passed": false
-      }}
-    ],
-    "summary": {{
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "last_run_version": ""
-    }}
-  }},
-  "reflection": {{
-    "what_was_done": "...",                 // Honest summary of work completed
-    "what_remains": "none",                 // Must be empty to allow stop
-    "blockers": null                        // Any genuine blockers
-  }},
-  "evidence": {{
-    "urls_tested": [],                      // URLs you actually tested
-    "console_clean": false                  // Was browser console clean?
-  }}
-}}
-
-VERSION TRACKING:
-- Version-dependent fields (deployed, linters_pass, web_testing_done, etc.)
-  must include a matching *_at_version field with the git commit hash
-- If you make code changes AFTER setting a checkpoint, it becomes STALE
-- Get current version: git rev-parse --short HEAD
-
-DOCUMENTATION REQUIREMENTS (docs_updated):
-- docs/TECHNICAL_OVERVIEW.md - Update for architectural changes
-- Module docs in docs/ directory - Update for feature changes
-- .claude/skills/*/references/ - Update service topology, patterns
-- .claude/MEMORIES.md - Significant learnings only (not changelog)
-
-If you answer "false" to required fields and try to stop, you'll be blocked.
-The only way to stop is to actually do the work OR have a genuine blocker.
-
-Create this file, answer honestly, then stop again.
-""", file=sys.stderr)
-    sys.exit(2)
-
-
-def block_with_continuation(failures: list[str], cwd: str = "") -> None:
-    """Block stop with specific continuation instructions."""
-    failure_list = "\n".join(f"  • {f}" for f in failures)
-
-    # Get current version for guidance
-    current_version = get_code_version(cwd)
-    version_info = f"Current version: {current_version}" if current_version != "unknown" else "Run: git rev-parse --short HEAD"
-
-    # Check for worktree context
-    worktree_info = get_worktree_info(cwd)
-    worktree_banner = ""
-    if worktree_info and worktree_info.get("is_claude_worktree"):
-        worktree_banner = f"""
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  WORKTREE: {worktree_info['agent_id']:<20} BRANCH: {worktree_info['branch']:<30}│
-└─────────────────────────────────────────────────────────────────────────────┘
-"""
-
-    print(f"""
-╔═══════════════════════════════════════════════════════════════════════════════╗
-║  ❌ COMPLETION CHECKPOINT FAILED - CONTINUE WORKING                           ║
-╚═══════════════════════════════════════════════════════════════════════════════╝
-{worktree_banner}
-Your self-report indicates incomplete work:
-
-{failure_list}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REQUIRED ACTION: Complete the remaining work.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-If a checkpoint is marked "STALE":
-  → The code changed since that checkpoint was set
-  → Re-run that step (deploy, test, lint, etc.) with the current code
-  → {version_info}
-  → Update checkpoint: "field": true, "field_at_version": "<version>"
-
-If web_testing_done is false:
-  → Run /webtest or use Chrome MCP to verify in browser
-  → Check browser console for errors
-  → Update checkpoint with results and version
-
-If deployed is false (and code was changed):
-  → Commit and push: git add <files> && git commit -m "fix: ..." && git push
-  → Deploy: gh workflow run deploy.yml && gh run watch --exit-status
-  → Update checkpoint: deployed: true, deployed_at_version: "<version>"
-
-If linters_pass is false:
-  → Auto-detect linters: package.json → npm run lint / eslint
-                         pyproject.toml → ruff check --fix
-                         tsconfig.json → tsc --noEmit
-  → Fix ALL errors - including pre-existing ones
-  → "These errors aren't related to our code" is NOT acceptable
-  → Update checkpoint: linters_pass: true, linters_pass_at_version: "<version>"
-
-If docs_read_at_start is false (appfix mode):
-  → Read docs/index.md and docs/TECHNICAL_OVERVIEW.md
-  → Update checkpoint: docs_read_at_start: true
-
-If infra_pr_created is false (but az_cli_changes_made is true):
-  → Document az CLI changes in .claude/infra-changes.md
-  → Clone infra repo (see service-topology.md for location)
-  → Update Terraform/Bicep/ARM templates to match
-  → Create PR: gh pr create --title "Sync infra changes from appfix"
-  → Update checkpoint: infra_pr_created: true
-
-If validation_tests_defined is false (and you made code changes):
-  → Ask: "What would PROVE this specific fix worked?"
-  → Define tests in checkpoint → validation_tests.tests array
-  → Test types: database_query, api_response, page_content
-  → Each test needs: id, description, type, expected
-
-If validation_tests_passed is false:
-  → Execute each test and record actual results
-  → If tests FAIL → The fix didn't work! Fix the root cause.
-  → Re-run tests until ALL pass
-  → Save artifacts to .claude/validation-tests/summary.json
-  → Update checkpoint: validation_tests_passed: true, version
-
-If is_job_complete is false:
-  → You honestly answered that the job isn't done
-  → Complete the remaining work, then update checkpoint
-
-If what_remains is not empty:
-  → You listed remaining work: do it!
-
-Update .claude/completion-checkpoint.json, then stop again.
-""", file=sys.stderr)
-    sys.exit(2)
-
+# ============================================================================
+# Session Detection
+# ============================================================================
 
 def session_made_code_changes(cwd: str) -> bool:
-    """
-    Check if THIS session made code changes (not pre-existing changes).
+    """Check if THIS session made code changes (not pre-existing changes).
 
     Compares the current diff hash against the snapshot taken at session start.
     This prevents research-only sessions from being blocked by pre-existing
@@ -1029,8 +142,7 @@ def session_made_code_changes(cwd: str) -> bool:
 
 
 def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
-    """
-    Determine if this session requires a completion checkpoint.
+    """Determine if this session requires a completion checkpoint.
 
     Checkpoint required when:
     - Autonomous mode is active (godo-state.json or appfix-state.json exists)
@@ -1068,24 +180,37 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     return False
 
 
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
 def main():
+    """Main stop hook entry point."""
     # Skip for automation roles
     fleet_role = os.environ.get("FLEET_ROLE", "")
     if fleet_role in ("knowledge_sync", "scheduled_job"):
-        log_debug("Skipping: automation role", parsed_data={"fleet_role": fleet_role})
+        log_debug(
+            "Skipping: automation role",
+            hook_name="stop-validator",
+            parsed_data={"fleet_role": fleet_role}
+        )
         sys.exit(0)
 
     # Read and parse stdin
     raw_input = sys.stdin.read()
-    log_debug("Stop hook invoked", raw_input=raw_input)
+    log_debug("Stop hook invoked", hook_name="stop-validator", raw_input=raw_input)
 
     try:
         input_data = json.loads(raw_input) if raw_input else {}
     except json.JSONDecodeError as e:
-        log_debug(f"JSON parse error: {e}", raw_input=raw_input)
+        log_debug(
+            f"JSON parse error: {e}",
+            hook_name="stop-validator",
+            raw_input=raw_input
+        )
         sys.exit(0)
 
-    log_debug("Parsed successfully", parsed_data=input_data)
+    log_debug("Parsed successfully", hook_name="stop-validator", parsed_data=input_data)
 
     cwd = input_data.get("cwd", "")
     stop_hook_active = input_data.get("stop_hook_active", False)
@@ -1095,7 +220,10 @@ def main():
 
     # Check if checkpoint is required for this session
     if not requires_checkpoint(cwd, modified_files):
-        log_debug("ALLOWING STOP: no checkpoint required (no code changes, no active plan)")
+        log_debug(
+            "ALLOWING STOP: no checkpoint required (no code changes, no active plan)",
+            hook_name="stop-validator"
+        )
         sys.exit(0)
 
     # Load checkpoint
@@ -1106,33 +234,48 @@ def main():
     # =========================================================================
     if not stop_hook_active:
         if checkpoint is None:
-            log_debug("BLOCKING STOP: checkpoint file missing")
+            log_debug("BLOCKING STOP: checkpoint file missing", hook_name="stop-validator")
             block_no_checkpoint(cwd)
 
         # Checkpoint exists but first stop - validate and block with checklist
         is_valid, failures = validate_checkpoint(checkpoint, modified_files, cwd)
         if not is_valid:
-            log_debug("BLOCKING STOP: checkpoint validation failed", parsed_data={"failures": failures})
+            log_debug(
+                "BLOCKING STOP: checkpoint validation failed",
+                hook_name="stop-validator",
+                parsed_data={"failures": failures}
+            )
             block_with_continuation(failures, cwd)
 
         # Checkpoint valid - allow stop on first try if everything is complete
-        log_debug("ALLOWING STOP: checkpoint valid on first stop")
+        log_debug("ALLOWING STOP: checkpoint valid on first stop", hook_name="stop-validator")
         sys.exit(0)
 
     # =========================================================================
     # SECOND STOP (stop_hook_active=True): Re-validate checkpoint
     # =========================================================================
     if checkpoint is None:
-        log_debug("BLOCKING STOP: second stop but checkpoint file still missing")
+        log_debug(
+            "BLOCKING STOP: second stop but checkpoint file still missing",
+            hook_name="stop-validator"
+        )
         block_no_checkpoint(cwd)
 
     is_valid, failures = validate_checkpoint(checkpoint, modified_files, cwd)
     if not is_valid:
-        log_debug("BLOCKING STOP: second stop but checkpoint still invalid", parsed_data={"failures": failures})
+        log_debug(
+            "BLOCKING STOP: second stop but checkpoint still invalid",
+            hook_name="stop-validator",
+            parsed_data={"failures": failures}
+        )
         block_with_continuation(failures, cwd)
 
     # All checks pass
-    log_debug("ALLOWING STOP: checkpoint valid", parsed_data={"checkpoint": checkpoint})
+    log_debug(
+        "ALLOWING STOP: checkpoint valid",
+        hook_name="stop-validator",
+        parsed_data={"checkpoint": checkpoint}
+    )
     sys.exit(0)
 
 
