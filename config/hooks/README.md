@@ -15,13 +15,19 @@ This directory contains Python hook scripts that extend Claude Code's lifecycle 
 | `plan-mode-enforcer.py` | PreToolUse (Edit/Write) | Blocks Edit/Write on first godo/appfix iteration until plan mode completed |
 | `appfix-auto-approve.py` | PermissionRequest | Auto-approves ALL tools during godo/appfix mode |
 | `read-docs-trigger.py` | UserPromptSubmit | Suggests reading docs when "read the docs" appears in prompt |
+| `skill-state-initializer.py` | UserPromptSubmit | Creates state files for /appfix and /godo to enable auto-approval |
+| `bash-version-tracker.py` | PostToolUse (Bash) | Tracks version after git commits, updates checkpoint |
+| `checkpoint-write-validator.py` | PostToolUse (Write) | Validates checkpoint file integrity on writes |
 
 ## Utility Scripts (Not Lifecycle Hooks)
 
 | Script | Purpose |
 |--------|---------|
 | `_common.py` | Shared utility functions used by other hooks |
+| `_sv_validators.py` | Validation logic for stop-validator (sub-validators) |
+| `_sv_templates.py` | Blocking message templates for stop-validator |
 | `surf-verify.py` | Runs Surf CLI for browser verification, generates web-smoke artifacts |
+| `worktree-manager.py` | Creates/manages git worktrees for parallel agent isolation |
 
 ### _common.py Functions
 
@@ -97,12 +103,17 @@ SessionStart
 
 UserPromptSubmit
     └─► read-docs-trigger.py (checks for "read the docs")
+    └─► skill-state-initializer.py (creates godo/appfix state files)
 
 PreToolUse (Edit/Write)
     └─► plan-mode-enforcer.py (blocks until plan mode completed, iteration 1 only)
 
 PostToolUse (Edit/Write)
     └─► checkpoint-invalidator.py (resets stale checkpoint)
+    └─► checkpoint-write-validator.py (validates checkpoint integrity)
+
+PostToolUse (Bash)
+    └─► bash-version-tracker.py (tracks version after git commits)
 
 PostToolUse (ExitPlanMode)
     └─► plan-execution-reminder.py (injects context)

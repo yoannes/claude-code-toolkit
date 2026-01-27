@@ -53,12 +53,13 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | `/designimprove` | Recursive UI design improvement |
 | `/uximprove` | Recursive UX improvement |
 
-## Available Skills (11)
+## Available Skills (12)
 
 | Skill | Triggers On |
 |-------|-------------|
 | `godo` | /godo, "go do", "just do it" - task-agnostic autonomous execution |
 | `appfix` | "fix the app", autonomous debugging (extends godo) |
+| `deploy-pipeline` | /deploy, deployment environments - Motium deployment guide |
 | `async-python-patterns` | asyncio, concurrent programming |
 | `nextjs-tanstack-stack` | Next.js, TanStack, Zustand |
 | `prompt-engineering-patterns` | Prompt optimization |
@@ -69,16 +70,18 @@ Central navigation hub for the Claude Code Toolkit documentation.
 | `ux-improver` | UX usability review |
 | `docs-navigator` | Documentation navigation |
 
-## Active Hooks (6 Event Types)
+## Active Hooks (7 Event Types)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
 | SessionStart | session-snapshot.py, read-docs-reminder.py | Git diff snapshot, doc reading |
-| Stop | stop-validator.py | Validates completion checkpoint |
+| UserPromptSubmit | read-docs-trigger.py, skill-state-initializer.py | Doc triggers, state file creation |
+| PreToolUse (Edit/Write) | plan-mode-enforcer.py | Blocks edits until plan mode done |
 | PostToolUse (Edit/Write) | checkpoint-invalidator.py | Resets stale checkpoint flags |
-| UserPromptSubmit | read-docs-trigger.py | Doc reading triggers |
-| PostToolUse (ExitPlanMode) | plan-execution-reminder.py, appfix-auto-approve.py | Execution context injection |
+| PostToolUse (Bash) | bash-version-tracker.py | Tracks version after commits |
+| PostToolUse (ExitPlanMode) | plan-execution-reminder.py, plan-mode-tracker.py | Execution context, state update |
 | PermissionRequest | appfix-auto-approve.py | Auto-approve all tools during godo/appfix |
+| Stop | stop-validator.py | Validates completion checkpoint |
 
 ## Directory Structure
 

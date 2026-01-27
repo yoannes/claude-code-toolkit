@@ -18,12 +18,14 @@ That's what `/godo` and `/appfix` do.
 ## Quick Start
 
 ```bash
-# Install
+# Install (with automatic verification)
 git clone https://github.com/Motium-AI/claude-code-toolkit.git
 cd claude-code-toolkit && ./scripts/install.sh
 
-# Execute any task autonomously
+# IMPORTANT: Restart Claude Code after install!
 claude
+
+# Execute any task autonomously
 > /godo add a logout button to the navbar
 
 # Or debug a broken app
@@ -31,6 +33,18 @@ claude
 ```
 
 Claude will autonomously plan, execute, deploy, and verify your changes.
+
+### Installation Options
+
+```bash
+./scripts/install.sh              # Interactive install + verification
+./scripts/install.sh --force      # Skip confirmations
+./scripts/install.sh --verify     # Only verify (no install)
+./scripts/install.sh --remote     # Install on remote devbox
+
+# Troubleshooting
+./scripts/doctor.sh               # Comprehensive diagnostics
+```
 
 ---
 
@@ -248,14 +262,20 @@ Claude Code supports three extension types:
 | **Skills** | Automatic keyword match | Domain expertise |
 | **Hooks** | Lifecycle events | Inject context, enforce behavior |
 
-### Hook Events
+### Hook Events (12 Active)
 
-| Event | Script | Purpose |
-|-------|--------|---------|
-| SessionStart | read-docs-reminder.py | Force reading project docs |
+| Event | Scripts | Purpose |
+|-------|---------|---------|
+| SessionStart | session-snapshot.py, read-docs-reminder.py | Git state capture, doc reminders |
+| UserPromptSubmit | read-docs-trigger.py, skill-state-initializer.py | Doc triggers, state file creation |
+| PreToolUse (Edit/Write) | plan-mode-enforcer.py | Block edits until plan mode done |
+| PostToolUse (Edit/Write) | checkpoint-invalidator.py, checkpoint-write-validator.py | Reset stale flags, validate writes |
+| PostToolUse (Bash) | bash-version-tracker.py | Track version after commits |
+| PostToolUse (ExitPlanMode) | plan-execution-reminder.py, plan-mode-tracker.py | Inject context, update state |
+| PermissionRequest | appfix-auto-approve.py | Auto-approve during godo/appfix |
 | Stop | stop-validator.py | Validate completion checkpoint |
-| PostToolUse | plan-execution-reminder.py | Inject autonomous context |
-| PermissionRequest | appfix-*-auto-approve.py | Auto-approve during appfix |
+
+See [config/hooks/README.md](config/hooks/README.md) for complete hook documentation.
 
 ### The Completion Checkpoint Philosophy
 
@@ -282,21 +302,24 @@ claude-code-toolkit/
 │   ├── settings.json              # Hook definitions
 │   ├── commands/                  # Slash commands
 │   ├── hooks/                     # Python hook scripts
+│   │   ├── _common.py                   # Shared utilities (state detection)
 │   │   ├── appfix-auto-approve.py       # Auto-approves ALL tools during godo/appfix
+│   │   ├── plan-mode-enforcer.py        # Blocks Edit/Write until plan mode done
 │   │   ├── checkpoint-invalidator.py    # Resets stale checkpoint flags
-│   │   ├── plan-execution-reminder.py   # Injects autonomous context
 │   │   ├── stop-validator.py            # Validates completion checkpoint
 │   │   └── ...
 │   └── skills/
 │       ├── appfix/
 │       │   ├── SKILL.md           # Main skill definition
 │       │   └── references/        # Service topology, patterns
-│       └── ...
+│       └── godo/
+│           └── SKILL.md           # Universal task execution
 ├── docs/
 │   ├── skills/appfix-guide.md     # Complete appfix guide
 │   └── concepts/hooks.md          # Hook system deep dive
 └── scripts/
-    └── install.sh
+    ├── install.sh                 # Installer with verification
+    └── doctor.sh                  # Diagnostic tool
 ```
 
 ---
