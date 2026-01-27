@@ -19,6 +19,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -71,7 +72,7 @@ def main():
         sys.exit(0)
 
     # PreToolUse uses tool_name (not toolName)
-    cwd = input_data.get("cwd", "")
+    cwd = input_data.get("cwd", "") or os.getcwd()
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
     file_path = tool_input.get("file_path", "")

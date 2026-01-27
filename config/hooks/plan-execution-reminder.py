@@ -12,16 +12,9 @@ import os
 import sys
 from pathlib import Path
 
-
-def is_appfix_active(cwd: str) -> bool:
-    """Check if appfix is active via env var OR state file."""
-    if os.environ.get("APPFIX_ACTIVE", "").lower() in ("true", "1", "yes"):
-        return True
-    if cwd:
-        state_file = Path(cwd) / ".claude" / "appfix-state.json"
-        if state_file.exists():
-            return True
-    return False
+# Add hooks directory to path for shared imports
+sys.path.insert(0, str(Path(__file__).parent))
+from _common import is_appfix_active
 
 
 def main():
@@ -31,7 +24,7 @@ def main():
         sys.exit(0)
 
     tool_name = input_data.get("tool_name", "")
-    cwd = input_data.get("cwd", "")
+    cwd = input_data.get("cwd", "") or os.getcwd()
 
     if tool_name != "ExitPlanMode":
         sys.exit(0)
