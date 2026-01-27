@@ -33,7 +33,7 @@ from pathlib import Path
 # Configuration
 # ============================================================================
 
-CHECK_INTERVAL_HOURS = 24
+CHECK_INTERVAL_MINUTES = 5
 STATE_FILE = Path.home() / ".claude" / "toolkit-update-state.json"
 DEBUG_LOG = Path("/tmp/claude-hooks-debug.log")
 
@@ -136,7 +136,7 @@ def should_check_for_updates(state: dict) -> bool:
         last_check_time = datetime.fromisoformat(last_check_str)
         now = datetime.now(timezone.utc)
         elapsed = now - last_check_time
-        should_check = elapsed > timedelta(hours=CHECK_INTERVAL_HOURS)
+        should_check = elapsed > timedelta(minutes=CHECK_INTERVAL_MINUTES)
         log_debug(f"last check: {last_check}, elapsed: {elapsed}, should_check: {should_check}")
         return should_check
     except (ValueError, TypeError) as e:
