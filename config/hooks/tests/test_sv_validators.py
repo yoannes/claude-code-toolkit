@@ -18,6 +18,7 @@ from _sv_validators import (
     validate_core_completion,
     validate_code_requirements,
     validate_fix_specific_tests,
+    validate_web_testing,
     has_code_changes,
     has_frontend_changes,
     has_real_app_urls,
@@ -241,6 +242,113 @@ class TestWorktreeDetection:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Not a git repo
             assert is_worktree(tmpdir) is False
+
+
+class TestWebTestingBypassPrevention:
+    """Tests for preventing web testing bypass via false claims."""
+
+    @patch('_sv_validators.is_autonomous_mode_active')
+    @patch('_sv_validators.validate_web_smoke_artifacts')
+    def test_rejects_claim_without_artifacts(self, mock_artifacts, mock_autonomous):
+        """web_testing_done=true without artifacts should fail and be reset."""
+        mock_autonomous.return_value = True
+        mock_artifacts.return_value = (False, ["No summary.json found"])
+
+        checkpoint = {
+            'self_report': {
+                'web_testing_done': True,
+                'web_testing_done_at_version': 'abc123',
+                'code_changes_made': False,  # "Backend-only" claim
+            },
+            'evidence': {'urls_tested': []}
+        }
+
+        failures, modified = validate_web_testing(
+            checkpoint, has_app_code=False, has_infra_changes=False, cwd='/tmp'
+        )
+
+        # Should fail validation
+        assert len(failures) > 0
+        assert any('web_testing_done is TRUE but no valid Surf artifacts' in f for f in failures)
+
+        # Should auto-reset the false claim
+        assert modified is True
+        assert checkpoint['self_report']['web_testing_done'] is False
+        assert checkpoint['self_report']['web_testing_done_at_version'] == ""
+
+    @patch('_sv_validators.is_autonomous_mode_active')
+    @patch('_sv_validators.validate_web_smoke_artifacts')
+    def test_auto_resets_console_checked_without_artifacts(self, mock_artifacts, mock_autonomous):
+        """console_errors_checked=true without artifacts should fail and be reset."""
+        mock_autonomous.return_value = True
+        mock_artifacts.return_value = (False, ["No summary.json found"])
+
+        checkpoint = {
+            'self_report': {
+                'console_errors_checked': True,
+                'console_errors_checked_at_version': 'abc123',
+                'code_changes_made': False,
+            },
+            'evidence': {'urls_tested': []}
+        }
+
+        failures, modified = validate_web_testing(
+            checkpoint, has_app_code=False, has_infra_changes=False, cwd='/tmp'
+        )
+
+        assert any('console_errors_checked is TRUE but no valid Surf artifacts' in f for f in failures)
+        assert modified is True
+        assert checkpoint['self_report']['console_errors_checked'] is False
+
+    @patch('_sv_validators.is_autonomous_mode_active')
+    @patch('_sv_validators.validate_web_smoke_artifacts')
+    def test_backend_only_still_requires_verification(self, mock_artifacts, mock_autonomous):
+        """Backend-only changes (code_changes_made=true) still need Surf verification."""
+        mock_autonomous.return_value = True
+        mock_artifacts.return_value = (False, ["No summary.json found"])
+
+        checkpoint = {
+            'self_report': {
+                'web_testing_done': False,
+                'code_changes_made': True,  # Backend change claimed
+            },
+            'evidence': {'urls_tested': []}
+        }
+
+        failures, modified = validate_web_testing(
+            checkpoint, has_app_code=False, has_infra_changes=False, cwd='/tmp'
+        )
+
+        # Should still require web smoke verification
+        assert any('WEB SMOKE VERIFICATION REQUIRED' in f for f in failures)
+
+    @patch('_sv_validators.is_autonomous_mode_active')
+    @patch('_sv_validators.validate_web_smoke_artifacts')
+    @patch('_sv_validators.get_code_version')
+    def test_valid_artifacts_auto_set_booleans(self, mock_version, mock_artifacts, mock_autonomous):
+        """Valid artifacts should auto-set web_testing_done and console_errors_checked."""
+        mock_autonomous.return_value = True
+        mock_artifacts.return_value = (True, [])
+        mock_version.return_value = 'abc123'
+
+        checkpoint = {
+            'self_report': {
+                'web_testing_done': False,
+                'console_errors_checked': False,
+                'code_changes_made': True,
+            },
+            'evidence': {'urls_tested': ['https://app.com/dashboard']}
+        }
+
+        failures, modified = validate_web_testing(
+            checkpoint, has_app_code=True, has_infra_changes=False, cwd='/tmp'
+        )
+
+        # Should pass and auto-set booleans
+        assert len(failures) == 0
+        assert modified is True
+        assert checkpoint['self_report']['web_testing_done'] is True
+        assert checkpoint['self_report']['console_errors_checked'] is True
 
 
 if __name__ == '__main__':

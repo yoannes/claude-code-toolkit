@@ -428,6 +428,13 @@ def validate_web_testing(
 ) -> tuple[list[str], bool]:
     """Check web testing requirements for autonomous mode.
 
+    In autonomous mode (appfix/godo), web smoke verification is MANDATORY
+    when code changes are made. Backend-only changes are NOT exempt -
+    they can still break the frontend.
+
+    CRITICAL: If web_testing_done is claimed as TRUE, Surf artifacts MUST exist.
+    This prevents bypassing validation by manually setting the boolean.
+
     Returns (failures, checkpoint_modified)
     """
     failures = []
@@ -437,10 +444,47 @@ def validate_web_testing(
     if not is_autonomous_mode_active(cwd):
         return failures, checkpoint_modified
 
-    if not (has_app_code or has_infra_changes):
+    # Use both git detection AND self-reported code_changes_made
+    # This prevents bypasses when git detection fails to catch changes
+    code_changes_claimed = report.get("code_changes_made", False)
+    any_code_changes = has_app_code or has_infra_changes or code_changes_claimed
+
+    # CRITICAL CROSS-VALIDATION: If web_testing_done is claimed TRUE,
+    # artifacts MUST exist regardless of detected code changes.
+    # This prevents the bypass: "Backend-only change - no frontend UI to test"
+    web_testing_claimed = report.get("web_testing_done", False)
+    console_checked_claimed = report.get("console_errors_checked", False)
+
+    if web_testing_claimed or console_checked_claimed:
+        artifact_valid, artifact_errors = validate_web_smoke_artifacts(cwd)
+        if not artifact_valid:
+            # FALSE CLAIM DETECTED - reset the booleans
+            if web_testing_claimed:
+                failures.append(
+                    "web_testing_done is TRUE but no valid Surf artifacts exist.\n"
+                    "Cannot claim web testing done without proof. Auto-resetting to FALSE."
+                )
+                report["web_testing_done"] = False
+                report["web_testing_done_at_version"] = ""
+                checkpoint_modified = True
+
+            if console_checked_claimed:
+                failures.append(
+                    "console_errors_checked is TRUE but no valid Surf artifacts exist.\n"
+                    "Cannot claim console checked without proof. Auto-resetting to FALSE."
+                )
+                report["console_errors_checked"] = False
+                report["console_errors_checked_at_version"] = ""
+                checkpoint_modified = True
+
+            failures.extend([f"  → {err}" for err in artifact_errors])
+
+    # If no code changes at all, and we've handled any false claims above,
+    # no further validation needed
+    if not any_code_changes:
         return failures, checkpoint_modified
 
-    # Artifact-based verification is MANDATORY
+    # Code changes were made - artifact-based verification is MANDATORY
     artifact_valid, artifact_errors = validate_web_smoke_artifacts(cwd)
 
     if artifact_valid:
@@ -454,16 +498,15 @@ def validate_web_testing(
             report["console_errors_checked_at_version"] = get_code_version(cwd)
             checkpoint_modified = True
     else:
+        # CRITICAL: In autonomous mode, web smoke is NOT optional
         failures.append(
-            "web_testing_done requires PROOF via Surf CLI artifacts.\n"
+            "WEB SMOKE VERIFICATION REQUIRED (Autonomous Mode)\n"
+            "Even backend-only changes can break the frontend.\n"
             "Run: python3 ~/.claude/hooks/surf-verify.py --urls 'https://your-app.com'"
         )
-        failures.extend([f"  → {err}" for err in artifact_errors])
-
-        if report.get("console_errors_checked", False):
-            failures.append("console_errors_checked is true but no Surf artifacts exist.")
-        else:
-            failures.append("console_errors_checked is false - run Surf CLI for proof.")
+        # Only add artifact errors if not already added above (from cross-validation)
+        if not (web_testing_claimed or console_checked_claimed):
+            failures.extend([f"  → {err}" for err in artifact_errors])
 
     # Check URLs tested
     evidence = checkpoint.get("evidence", {})
