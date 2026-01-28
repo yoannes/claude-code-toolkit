@@ -68,7 +68,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `ux-improver` | UX review |
 | `docs-navigator` | Documentation |
 
-## Hook Events (7)
+## Hook Events (8)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
@@ -78,6 +78,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
 | PostToolUse (Bash) | bash-version-tracker | Track versions |
 | PostToolUse (ExitPlanMode) | plan-execution-reminder | Inject context |
+| PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
 | PermissionRequest | appfix-auto-approve | Auto-approve |
 | Stop | stop-validator | Validate checkpoint |
 
