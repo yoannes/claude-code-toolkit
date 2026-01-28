@@ -173,11 +173,85 @@ After all 6 agents return, synthesize their outputs:
    ```
    Do NOT smooth over disagreements. The structured conflict IS the insight.
 3. **Gaps** - What's missing? What assumptions weren't challenged?
-4. **Select 2-3 threads** for Round 2 deep-dive (pick the most contested disagreements)
+4. **Select the #1 most contested disagreement** for adversarial dialogue (Round 1.5)
+5. **Select 1-2 additional threads** for Round 2 deep-dive
 
 ---
 
-### Round 2: Depth (Launch 2-3 More Agents)
+### Round 1.5: Adversarial Dialogue (Sequential, on #1 Disagreement)
+
+For the single most contested disagreement, have the two disagreeing agents actually converse. This is **sequential** (not parallel) - each agent responds to the other's output.
+
+**Step 1: Defender states position**
+```
+Task(
+  subagent_type="general-purpose",
+  description="Dialogue: [Agent X] defends position",
+  model="opus",
+  prompt="""You are [AGENT X's LENS] from Round 1.
+
+You claimed: [X's position from Round 1]
+Your reasoning was: [X's reasoning]
+
+[AGENT Y] disagrees. They claim: [Y's position]
+Their reasoning: [Y's reasoning]
+
+Your task: DEFEND your position against their critique.
+- Address their strongest point directly
+- Provide additional evidence or reasoning
+- Identify where you might update your view (if anywhere)
+- State what would change your mind
+
+Deliver (max 300 words):
+1. **Direct response** to their critique
+2. **Strengthened argument** (new evidence or framing)
+3. **Concessions** (where they have a point)
+4. **Crux** (what we'd need to know to resolve this)
+"""
+)
+```
+
+**Step 2: Challenger responds** (after Step 1 completes)
+```
+Task(
+  subagent_type="general-purpose",
+  description="Dialogue: [Agent Y] responds",
+  model="opus",
+  prompt="""You are [AGENT Y's LENS] from Round 1.
+
+You claimed: [Y's position from Round 1]
+
+[AGENT X] has responded to your critique:
+---
+[PASTE AGENT X's RESPONSE FROM STEP 1]
+---
+
+Your task: RESPOND to their defense.
+- Did they address your strongest point?
+- Where does their argument still fail?
+- Where did they change your mind (if anywhere)?
+- What's the remaining disagreement (if any)?
+
+Deliver (max 300 words):
+1. **Assessment** of their response
+2. **Remaining weaknesses** in their position
+3. **Updated view** (where you shifted)
+4. **Final verdict**: agreement, partial agreement, or persistent disagreement
+"""
+)
+```
+
+**Step 3: Synthesis of dialogue**
+
+After both agents have spoken, synthesize the dialogue outcome:
+- Did they converge? On what?
+- What remains contested?
+- What new insights emerged from the exchange?
+- How does this change the overall analysis?
+
+---
+
+### Round 2: Depth (Launch 1-2 More Agents)
 
 Based on the synthesis, launch targeted deep-dive agents:
 
@@ -262,6 +336,18 @@ After Round 2 completes, generate the final answer:
 
 [Repeat for each major disagreement. Do NOT smooth over conflicts.]
 
+## Dialogue Outcome (from Round 1.5)
+**Contested point**: [The #1 disagreement that went to dialogue]
+
+| Turn | Agent | Key Move |
+|------|-------|----------|
+| Defense | [Agent X] | [Their main counter-argument] |
+| Response | [Agent Y] | [Their assessment + any concessions] |
+
+**Convergence**: [Where they agreed after dialogue]
+**Persistent disagreement**: [What remains unresolved]
+**New insight**: [What emerged from the exchange that wasn't in Round 1]
+
 ## Practical Guidance
 [Actionable recommendations based on the analysis]
 
@@ -292,6 +378,12 @@ After Round 2 completes, generate the final answer:
 - The crux (what would make one side right) is often more valuable than the resolution
 - Unresolved tensions are valid outputs — don't force false consensus
 - Depth comes from confronting conflicts, not spawning more agents
+
+**Adversarial dialogue produces real convergence:**
+- Parallel monologues miss each other's points; dialogue forces engagement
+- Defender must address the strongest counterargument, not a strawman
+- Concessions are explicit — "you changed my mind on X" is a valuable signal
+- Two rounds of exchange is usually enough; more risks performative debate
 
 **Avoid:**
 - Point-based rubrics that narrow reasoning
