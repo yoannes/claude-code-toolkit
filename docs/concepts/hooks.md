@@ -207,9 +207,107 @@ The hook tracks pending restarts and re-displays the warning on subsequent sessi
 ```json
 {
   "diff_hash_at_start": "a1b2c3d4e5f6",
-  "session_started_at": "2026-01-25T10:30:00"
+  "session_started_at": "2026-01-25T10:30:00",
+  "session_id": "abc123-def456"
 }
 ```
+
+**Additional behaviors**:
+1. **Session guard**: Claims session ownership via `.claude/session-owner.json`, warns if concurrent sessions detected
+2. **Expired state cleanup**: Cleans up expired autonomous state files from previous sessions
+3. **Worktree garbage collection**: Calls `gc_worktrees(ttl_hours=8)` to clean up stale worktrees from crashed coordinators
+
+### Utility Script: Worktree Manager
+
+**File**: `~/.claude/hooks/worktree-manager.py`
+
+**Purpose**: Provides git worktree isolation for parallel agent operations. Each agent gets its own worktree with a dedicated branch, preventing git operation conflicts during concurrent execution.
+
+**CLI Commands**:
+```bash
+# Create worktree for an agent
+python3 ~/.claude/hooks/worktree-manager.py create <agent-id>
+
+# Cleanup worktree after agent completes
+python3 ~/.claude/hooks/worktree-manager.py cleanup <agent-id>
+
+# Merge agent's work back to main branch
+python3 ~/.claude/hooks/worktree-manager.py merge <agent-id>
+
+# List all active agent worktrees
+python3 ~/.claude/hooks/worktree-manager.py list
+
+# Get worktree path for an agent
+python3 ~/.claude/hooks/worktree-manager.py path <agent-id>
+
+# Check if current directory is a worktree
+python3 ~/.claude/hooks/worktree-manager.py is-worktree
+
+# Garbage collect stale worktrees (TTL-based)
+python3 ~/.claude/hooks/worktree-manager.py gc [ttl_hours] [--dry-run]
+```
+
+**Garbage Collection** (`gc_worktrees()`):
+
+Cleans up orphaned worktrees from crashed coordinators:
+1. State file entries older than TTL (default: 8 hours)
+2. Orphaned directories in `/tmp/claude-worktrees/` not tracked in state
+3. Git worktree metadata (via `git worktree prune`)
+
+Called automatically at session start by `session-snapshot.py`.
+
+**State file**: `~/.claude/worktree-state.json`
+```json
+{
+  "worktrees": {
+    "agent-123": {
+      "path": "/tmp/claude-worktrees/agent-123",
+      "branch": "claude-agent/agent-123",
+      "main_repo": "/path/to/main/repo",
+      "base_commit": "abc1234",
+      "created_at": "2026-01-25T10:30:00Z"
+    }
+  }
+}
+```
+
+### UserPromptSubmit Hook: Skill State Initializer
+
+**File**: `~/.claude/hooks/skill-state-initializer.py`
+
+**Purpose**: Creates state files for autonomous execution skills (`/appfix`, `/godo`) immediately when the user's prompt matches trigger patterns. This ensures auto-approval hooks activate from the first tool call.
+
+**Coordinator Detection**:
+
+The hook detects whether the session is running in a git worktree (subagent) or main repo (coordinator):
+
+```python
+def _detect_worktree_context(cwd: str) -> tuple[bool, str | None, str | None]:
+    """Returns: (is_coordinator, agent_id, worktree_path)"""
+```
+
+**State file fields** (`.claude/appfix-state.json` or `.claude/godo-state.json`):
+```json
+{
+  "iteration": 1,
+  "started_at": "2026-01-25T10:00:00Z",
+  "session_id": "abc123",
+  "plan_mode_completed": false,
+  "parallel_mode": false,
+  "agent_id": null,
+  "worktree_path": null,
+  "coordinator": true
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `coordinator` | boolean | True if main repo (can deploy), false if worktree |
+| `parallel_mode` | boolean | True if running in a worktree |
+| `agent_id` | string\|null | Agent ID if in worktree |
+| `worktree_path` | string\|null | Worktree path if in worktree |
+
+**Deploy restrictions**: Subagents (`coordinator: false`) should never deploy directly. Only the coordinator agent (in main repo) handles deployments after merging subagent work.
 
 ### SessionStart Hook: Read Docs Reminder
 
