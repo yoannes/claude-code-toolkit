@@ -17,51 +17,45 @@ $ARGUMENTS
 
 **CRITICAL**: Launch ALL agents in a SINGLE message with multiple Task tool calls. This makes them run in parallel.
 
-Launch these 6 perspectives using `Task(subagent_type="general-purpose", ...)`:
+#### Step 0: Generate Dynamic Lenses
 
----
+Before launching agents, analyze the question and generate 3 domain-relevant perspectives. Think:
 
-**Agent 1: Prompt Engineering Lens**
+```
+Question: [USER'S QUESTION]
+
+What are the 3 most relevant expert perspectives for THIS specific question?
+- Not generic "domain expert" — name the specific domain
+- Not "prompt engineering" unless the question is actually about prompts
+- Consider: the industry, the technical domain, stakeholders affected, methodologies involved
+
+Examples:
+- "Should we use microservices?" → Software Architect, DevOps Engineer, Team Lead
+- "How should we price our product?" → Pricing Strategist, Customer Researcher, Finance Analyst
+- "Should we use RAG or fine-tuning?" → ML Engineer, Prompt Engineer, Infrastructure Lead
+- "How do we improve retention?" → Product Manager, Data Analyst, UX Researcher
+```
+
+#### Agents to Launch
+
+**3 DYNAMIC AGENTS** (generated based on the question):
+
+For each of the 3 domain-relevant perspectives you identified:
 ```
 Task(
   subagent_type="general-purpose",
-  description="Prompting perspective",
+  description="[PERSPECTIVE NAME] perspective",
   model="opus",
-  prompt="""You are a prompt engineering specialist analyzing this question:
-
-[INSERT FULL QUESTION]
-
-Focus on: instruction design tradeoffs, when determinism helps vs hurts, prompt patterns.
-
-Deliver (max 300 words):
-1. **Key insights** (max 8 bullets)
-2. **Prompt patterns** that apply (2-4 concrete examples)
-3. **Failure modes** + mitigations (max 3)
-4. **Follow-up questions** (3)
-"""
-)
-```
-
----
-
-**Agent 2: LLM Training/Alignment Lens**
-```
-Task(
-  subagent_type="general-purpose",
-  description="Training perspective",
-  model="opus",
-  prompt="""You are an LLM training and alignment analyst.
+  prompt="""You are a [SPECIFIC ROLE/EXPERTISE].
 
 Question: [INSERT FULL QUESTION]
 
-Constraints:
-- Use only public info; mark speculation vs documented facts
-- Cite vendor docs/blogs where possible
+Analyze this from your specific expertise. Focus on what YOU uniquely see that other perspectives might miss.
 
 Deliver (max 300 words):
-1. **Confidently known** (bullets with sources)
-2. **Likely but uncertain** (bullets, mark as inference)
-3. **What you'd test empirically**
+1. **Key insights from your perspective** (max 6 bullets)
+2. **What others might overlook** (2-3 points)
+3. **Risks you're uniquely positioned to see** (2-3)
 4. **Follow-up questions** (3)
 """
 )
@@ -69,36 +63,15 @@ Deliver (max 300 words):
 
 ---
 
-**Agent 3: Domain Expert Lens**
-```
-Task(
-  subagent_type="general-purpose",
-  description="Domain expert perspective",
-  model="opus",
-  prompt="""You are a domain expert in the field most relevant to this question.
+**3 FIXED AGENTS** (universal lenses that apply to any question):
 
-Question: [INSERT FULL QUESTION]
-
-First, identify the most relevant domain (recruiting, finance, engineering, etc.).
-
-Deliver (max 300 words):
-1. **First principles model** of the core problem
-2. **Evaluation dimensions** that avoid overly rigid rubrics
-3. **Risks** (bias, fairness, proxy variables) + mitigations
-4. **Follow-up questions** (3)
-"""
-)
-```
-
----
-
-**Agent 4: Contrarian Lens**
+**Fixed Agent 1: Contrarian**
 ```
 Task(
   subagent_type="general-purpose",
   description="Contrarian perspective",
   model="opus",
-  prompt="""You are a rigorous contrarian. Your job is to find weaknesses.
+  prompt="""You are a rigorous contrarian. Your job is to find weaknesses in whatever is being proposed or considered.
 
 Question/proposal to stress-test: [INSERT FULL QUESTION]
 
@@ -115,13 +88,13 @@ Be constructive but relentless. Don't strawman.
 
 ---
 
-**Agent 5: Systems Thinking Lens**
+**Fixed Agent 2: Systems Thinker**
 ```
 Task(
   subagent_type="general-purpose",
   description="Systems perspective",
   model="opus",
-  prompt="""You are a systems thinker.
+  prompt="""You are a systems thinker. Analyze the second and third-order effects.
 
 Question: [INSERT FULL QUESTION]
 
@@ -137,7 +110,7 @@ Deliver (max 300 words):
 
 ---
 
-**Agent 6: Pragmatist/Implementation Lens**
+**Fixed Agent 3: Pragmatist**
 ```
 Task(
   subagent_type="general-purpose",
@@ -365,6 +338,12 @@ After Round 2 completes, generate the final answer:
 ---
 
 ## Design Philosophy
+
+**Dynamic + Fixed agent mix:**
+- 3 dynamic agents are generated based on the actual question (domain-relevant expertise)
+- 3 fixed agents provide universal lenses (Contrarian, Systems, Pragmatist)
+- Dynamic agents prevent wasted perspectives (no "Prompt Engineering lens" for pricing questions)
+- Fixed agents ensure essential viewpoints are never skipped
 
 **Bet on model intelligence:**
 - Principles > rubrics
