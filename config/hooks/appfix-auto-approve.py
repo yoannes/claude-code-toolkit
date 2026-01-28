@@ -11,6 +11,7 @@ Detection: Checks for .claude/godo-state.json or .claude/appfix-state.json
 Hook event: PermissionRequest
 Matcher: * (wildcard - matches all tools)
 """
+
 from __future__ import annotations
 
 import json
@@ -20,7 +21,12 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import is_autonomous_mode_active, log_debug
+from _common import (
+    is_autonomous_mode_active,
+    get_autonomous_state,
+    is_state_expired,
+    log_debug,
+)
 
 
 def main():
@@ -32,8 +38,11 @@ def main():
             input_data = json.loads(stdin_data)
             cwd = input_data.get("cwd", os.getcwd())
         except json.JSONDecodeError as e:
-            log_debug("Failed to parse JSON input, using getcwd()",
-                     hook_name="appfix-auto-approve", error=str(e))
+            log_debug(
+                "Failed to parse JSON input, using getcwd()",
+                hook_name="appfix-auto-approve",
+                error=str(e),
+            )
             cwd = os.getcwd()
     else:
         # No stdin input - use current working directory
@@ -42,17 +51,27 @@ def main():
 
     # Only process if autonomous mode is active (godo or appfix)
     if not is_autonomous_mode_active(cwd):
-        log_debug(f"Autonomous mode not active for cwd={cwd}",
-                 hook_name="appfix-auto-approve")
+        log_debug(
+            f"Autonomous mode not active for cwd={cwd}", hook_name="appfix-auto-approve"
+        )
         sys.exit(0)  # Silent passthrough - normal approval flow
+
+    # Defense-in-depth: verify state is not expired (TTL check)
+    # is_autonomous_mode_active already checks TTL, but this adds an
+    # explicit second layer in case the state file changes between checks
+    state, state_type = get_autonomous_state(cwd)
+    if state is None or is_state_expired(state):
+        log_debug(
+            f"State expired or missing (defense-in-depth TTL check), cwd={cwd}",
+            hook_name="appfix-auto-approve",
+        )
+        sys.exit(0)  # Expired state - no auto-approval
 
     # Auto-approve the tool
     output = {
         "hookSpecificOutput": {
             "hookEventName": "PermissionRequest",
-            "decision": {
-                "behavior": "allow"
-            }
+            "decision": {"behavior": "allow"},
         }
     }
 

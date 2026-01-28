@@ -49,13 +49,14 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `/designimprove` | UI improvement |
 | `/uximprove` | UX improvement |
 
-## All Skills (14)
+## All Skills (15 active, 2 deprecated)
 
 | Skill | Triggers |
 |-------|----------|
 | `godo` | /godo, "go do", "just do it" |
 | `appfix` | /appfix, "fix the app", "debug production" |
 | `heavy` | /heavy, "heavy analysis", "multiple perspectives" |
+| `skill-sandbox` | /skill-sandbox, "test skill", "sandbox test" |
 | `toolkit` | /toolkit, "update toolkit" |
 | `deploy-pipeline` | /deploy, deployment questions |
 | `webapp-testing` | Browser testing |
@@ -67,6 +68,13 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `design-improver` | UI review |
 | `ux-improver` | UX review |
 | `docs-navigator` | Documentation |
+
+### Deprecated Skills
+
+| Skill | Status | Redirect |
+|-------|--------|----------|
+| `skill-tester` | Deprecated | → skill-sandbox |
+| `skilltest` | Deprecated | → skill-sandbox |
 
 ## Hook Events (8)
 
@@ -102,7 +110,7 @@ prompts/
 │   ├── settings.json      # Hook definitions
 │   ├── commands/          # 11 commands
 │   ├── hooks/             # Python hooks
-│   └── skills/            # 14 skills
+│   └── skills/            # 15 skills (+ 2 deprecated)
 ├── docs/                  # Documentation
 ├── scripts/               # install.sh, doctor.sh
 └── README.md

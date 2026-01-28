@@ -4,6 +4,7 @@ Shared utilities for Claude Code hooks.
 
 This module contains common functions used across multiple hooks to avoid duplication.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -11,8 +12,13 @@ import json
 import os
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+
+# TTL for autonomous mode state files (hours).
+# State older than this is considered expired and cleaned up.
+SESSION_TTL_HOURS = 8
 
 
 # Files/patterns excluded from version tracking (dirty calculation)
@@ -80,7 +86,9 @@ def get_diff_hash(cwd: str = "") -> str:
     try:
         result = subprocess.run(
             ["git", "diff", "HEAD", "--"] + VERSION_TRACKING_EXCLUSIONS,
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
         return hashlib.sha1(result.stdout.encode()).hexdigest()[:12]
@@ -113,7 +121,9 @@ def get_code_version(cwd: str = "") -> str:
     try:
         head = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
         head_hash = head.stdout.strip()
@@ -122,7 +132,9 @@ def get_code_version(cwd: str = "") -> str:
 
         diff = subprocess.run(
             ["git", "diff", "HEAD", "--"] + VERSION_TRACKING_EXCLUSIONS,
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
         # Return stable version - no hash suffix for dirty state
@@ -153,17 +165,19 @@ def log_debug(
     """
     try:
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*60}\n")
+            f.write(f"\n{'=' * 60}\n")
             f.write(f"Timestamp: {datetime.now().isoformat()}\n")
             f.write(f"Hook: {hook_name}\n")
             f.write(f"Message: {message}\n")
             if error:
                 f.write(f"Error: {type(error).__name__}: {error}\n")
             if raw_input:
-                f.write(f"Raw stdin ({len(raw_input)} bytes): {repr(raw_input[:500])}\n")
+                f.write(
+                    f"Raw stdin ({len(raw_input)} bytes): {repr(raw_input[:500])}\n"
+                )
             if parsed_data is not None:
                 f.write(f"Parsed data: {json.dumps(parsed_data, indent=2)}\n")
-            f.write(f"{'='*60}\n")
+            f.write(f"{'=' * 60}\n")
     except Exception:
         pass  # Never fail on logging
 
@@ -204,18 +218,33 @@ def _check_state_file(cwd: str, filename: str) -> bool:
 
 
 def is_appfix_active(cwd: str) -> bool:
-    """Check if appfix mode is active via state file or env var.
+    """Check if appfix mode is active via non-expired state file or env var.
+
+    Loads the state file and checks TTL expiry. Expired state files are
+    treated as inactive (cleaned up at next SessionStart).
 
     Args:
         cwd: Current working directory path
 
     Returns:
-        True if appfix mode is active, False otherwise
+        True if appfix mode is active and not expired, False otherwise
     """
-    if _check_state_file(cwd, "appfix-state.json"):
+    # Check project-level state with TTL
+    state = load_state_file(cwd, "appfix-state.json")
+    if state and not is_state_expired(state):
         return True
 
-    # Fallback: Check environment variable
+    # Check user-level state with TTL
+    user_state_path = Path.home() / ".claude" / "appfix-state.json"
+    if user_state_path.exists():
+        try:
+            user_state = json.loads(user_state_path.read_text())
+            if not is_state_expired(user_state):
+                return True
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    # Fallback: Check environment variable (no TTL for env vars)
     if os.environ.get("APPFIX_ACTIVE", "").lower() in ("true", "1", "yes"):
         return True
 
@@ -223,18 +252,33 @@ def is_appfix_active(cwd: str) -> bool:
 
 
 def is_godo_active(cwd: str) -> bool:
-    """Check if godo mode is active via state file or env var.
+    """Check if godo mode is active via non-expired state file or env var.
+
+    Loads the state file and checks TTL expiry. Expired state files are
+    treated as inactive (cleaned up at next SessionStart).
 
     Args:
         cwd: Current working directory path
 
     Returns:
-        True if godo mode is active, False otherwise
+        True if godo mode is active and not expired, False otherwise
     """
-    if _check_state_file(cwd, "godo-state.json"):
+    # Check project-level state with TTL
+    state = load_state_file(cwd, "godo-state.json")
+    if state and not is_state_expired(state):
         return True
 
-    # Fallback: Check environment variable
+    # Check user-level state with TTL
+    user_state_path = Path.home() / ".claude" / "godo-state.json"
+    if user_state_path.exists():
+        try:
+            user_state = json.loads(user_state_path.read_text())
+            if not is_state_expired(user_state):
+                return True
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    # Fallback: Check environment variable (no TTL for env vars)
     if os.environ.get("GODO_ACTIVE", "").lower() in ("true", "1", "yes"):
         return True
 
@@ -341,23 +385,24 @@ def update_state_file(cwd: str, filename: str, updates: dict) -> bool:
 
 
 def get_autonomous_state(cwd: str) -> tuple[dict | None, str | None]:
-    """Get the autonomous mode state file and its type.
+    """Get the autonomous mode state file and its type, filtering expired.
 
     Checks for godo-state.json first, then appfix-state.json.
+    Returns None for expired state files.
 
     Args:
         cwd: Current working directory path
 
     Returns:
         Tuple of (state_dict, state_type) where state_type is 'godo' or 'appfix'
-        Returns (None, None) if no state file found
+        Returns (None, None) if no state file found or all expired
     """
     godo_state = load_state_file(cwd, "godo-state.json")
-    if godo_state:
+    if godo_state and not is_state_expired(godo_state):
         return godo_state, "godo"
 
     appfix_state = load_state_file(cwd, "appfix-state.json")
-    if appfix_state:
+    if appfix_state and not is_state_expired(appfix_state):
         return appfix_state, "appfix"
 
     return None, None
@@ -416,8 +461,289 @@ def cleanup_autonomous_state(cwd: str) -> list[str]:
 
 
 # ============================================================================
+# Session & TTL Utilities
+# ============================================================================
+
+
+def is_state_expired(state: dict, ttl_hours: int = SESSION_TTL_HOURS) -> bool:
+    """Check if a state file has exceeded its TTL.
+
+    Uses last_activity_at if present, falls back to started_at.
+    Missing or malformed timestamps are treated as expired.
+
+    Args:
+        state: Parsed state file dict
+        ttl_hours: Hours before state expires (default: SESSION_TTL_HOURS)
+
+    Returns:
+        True if expired, False if still valid
+    """
+    timestamp_str = state.get("last_activity_at") or state.get("started_at")
+    if not timestamp_str:
+        return True  # No timestamp = expired
+
+    try:
+        # Parse ISO format timestamp
+        if timestamp_str.endswith("Z"):
+            timestamp_str = timestamp_str[:-1] + "+00:00"
+        ts = datetime.fromisoformat(timestamp_str)
+        # Ensure timezone-aware comparison
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return (now - ts) > timedelta(hours=ttl_hours)
+    except (ValueError, TypeError):
+        return True  # Malformed timestamp = expired
+
+
+def is_state_for_session(state: dict, session_id: str) -> bool:
+    """Check if a state file belongs to the given session.
+
+    No session_id in state = True (backward compatibility with old state files).
+    Empty session_id argument = True (caller doesn't have session info).
+
+    Args:
+        state: Parsed state file dict
+        session_id: Session ID to match against
+
+    Returns:
+        True if state belongs to this session (or can't determine)
+    """
+    if not session_id:
+        return True  # Caller has no session info - accept
+    state_session = state.get("session_id")
+    if not state_session:
+        return True  # Old format state - backward compatible
+    return state_session == session_id
+
+
+def cleanup_checkpoint_only(cwd: str) -> list[str]:
+    """Delete ONLY the completion checkpoint file. Leave mode state intact.
+
+    This is the sticky session replacement for cleanup_autonomous_state
+    at task boundaries. The mode state (appfix-state.json, godo-state.json)
+    persists for the next task in the same session.
+
+    Args:
+        cwd: Working directory containing .claude/
+
+    Returns:
+        List of file paths that were deleted
+    """
+    deleted = []
+    if not cwd:
+        return deleted
+
+    checkpoint_path = Path(cwd) / ".claude" / "completion-checkpoint.json"
+    if checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+            deleted.append(str(checkpoint_path))
+        except (IOError, OSError):
+            pass
+
+    return deleted
+
+
+def reset_state_for_next_task(cwd: str) -> bool:
+    """Reset per-task fields in the autonomous state file for the next task.
+
+    Increments iteration, resets plan_mode_completed, updates last_activity_at,
+    clears per-task fields (verification_evidence, services).
+    Does NOT delete the state file - that's the sticky session behavior.
+
+    Operates on whichever state file exists (godo or appfix).
+
+    Args:
+        cwd: Working directory containing .claude/
+
+    Returns:
+        True if state was reset, False if no state file found
+    """
+    for filename in ("godo-state.json", "appfix-state.json"):
+        state_path = _find_state_file_path(cwd, filename)
+        if state_path:
+            try:
+                state = json.loads(state_path.read_text())
+                # Increment iteration
+                state["iteration"] = state.get("iteration", 1) + 1
+                # Reset per-task fields
+                state["plan_mode_completed"] = False
+                state["verification_evidence"] = None
+                state["services"] = {}
+                # Update activity timestamp
+                state["last_activity_at"] = datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+                state_path.write_text(json.dumps(state, indent=2))
+
+                # Also update user-level state timestamp
+                user_state_path = Path.home() / ".claude" / filename
+                if user_state_path.exists():
+                    try:
+                        user_state = json.loads(user_state_path.read_text())
+                        user_state["last_activity_at"] = state["last_activity_at"]
+                        user_state_path.write_text(json.dumps(user_state, indent=2))
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+                return True
+            except (json.JSONDecodeError, IOError):
+                return False
+    return False
+
+
+def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
+    """Delete state files that are expired OR belong to a different session.
+
+    Called at SessionStart to clean up stale state from previous sessions.
+
+    Keeps state that:
+    - Belongs to the current session AND is not expired
+    - Has no session_id (old format) AND is not expired
+
+    Cleans both project-level and user-level state files.
+
+    Args:
+        cwd: Working directory to start walk-up from
+        current_session_id: Current session's ID (empty = clean only expired)
+
+    Returns:
+        List of file paths that were deleted
+    """
+    deleted = []
+    state_files = ["appfix-state.json", "godo-state.json"]
+
+    def _should_clean(state_path: Path) -> bool:
+        """Check if a state file should be cleaned up."""
+        try:
+            state = json.loads(state_path.read_text())
+        except (json.JSONDecodeError, IOError):
+            return True  # Corrupt file = clean up
+
+        # Expired state is always cleaned
+        if is_state_expired(state):
+            return True
+
+        # Different session's state is cleaned (if we know the session)
+        if current_session_id and not is_state_for_session(state, current_session_id):
+            return True
+
+        return False
+
+    # 1. Clean user-level state
+    user_claude_dir = Path.home() / ".claude"
+    for filename in state_files:
+        user_state = user_claude_dir / filename
+        if user_state.exists() and _should_clean(user_state):
+            try:
+                user_state.unlink()
+                deleted.append(str(user_state))
+            except (IOError, OSError):
+                pass
+
+    # 2. Walk UP directory tree and clean project-level state files
+    if cwd:
+        current = Path(cwd).resolve()
+        home = Path.home()
+        for _ in range(20):
+            if current == home:
+                break
+            claude_dir = current / ".claude"
+            if claude_dir.exists():
+                for filename in state_files:
+                    state_file = claude_dir / filename
+                    if state_file.exists() and _should_clean(state_file):
+                        try:
+                            state_file.unlink()
+                            deleted.append(str(state_file))
+                        except (IOError, OSError):
+                            pass
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+
+    return deleted
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Check if a process with the given PID is still running.
+
+    Uses os.kill(pid, 0) which doesn't actually send a signal,
+    just checks if the process exists.
+
+    Args:
+        pid: Process ID to check
+
+    Returns:
+        True if process exists, False if not
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Process exists but we don't own it
+    except OSError:
+        return False
+
+
+def _get_ancestor_pid() -> int:
+    """Get the ancestor PID that represents the Claude Code process.
+
+    Walks up the process tree past shell intermediaries (sh, bash, zsh,
+    python3) to find the actual Claude Code PID. Falls back to os.getppid().
+
+    Returns:
+        Best-guess PID for the Claude Code process
+    """
+    try:
+        pid = os.getppid()
+        # Walk up past shell intermediaries (max 5 levels)
+        for _ in range(5):
+            if pid <= 1:
+                break
+            try:
+                result = subprocess.run(
+                    ["ps", "-p", str(pid), "-o", "comm="],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                comm = result.stdout.strip().lower()
+                # Stop at node/claude (the actual Claude Code process)
+                if "node" in comm or "claude" in comm:
+                    return pid
+                # Skip shell intermediaries
+                if comm in ("sh", "bash", "zsh", "fish", "python3", "python"):
+                    # Get parent of this intermediate process
+                    ppid_result = subprocess.run(
+                        ["ps", "-p", str(pid), "-o", "ppid="],
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    parent_pid = int(ppid_result.stdout.strip())
+                    if parent_pid <= 1:
+                        break
+                    pid = parent_pid
+                else:
+                    break  # Unknown process, stop here
+            except (subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+                break
+        return pid
+    except Exception:
+        return os.getppid()
+
+
+# ============================================================================
 # Worktree Detection
 # ============================================================================
+
 
 def is_worktree(cwd: str = "") -> bool:
     """Check if the current directory is a git worktree (not the main repo).
@@ -434,12 +760,16 @@ def is_worktree(cwd: str = "") -> bool:
     try:
         git_dir = subprocess.run(
             ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
         git_common = subprocess.run(
             ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
         # If git-dir != git-common-dir, this is a linked worktree
@@ -468,7 +798,9 @@ def get_worktree_info(cwd: str = "") -> dict | None:
         # Get the branch name
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
         branch_name = branch.stdout.strip()
@@ -476,12 +808,16 @@ def get_worktree_info(cwd: str = "") -> dict | None:
         # Get worktree path
         worktree_path = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
             cwd=cwd or None,
         )
 
         # Check for agent state file
-        state_file = Path(worktree_path.stdout.strip()) / ".claude" / "worktree-agent-state.json"
+        state_file = (
+            Path(worktree_path.stdout.strip()) / ".claude" / "worktree-agent-state.json"
+        )
         agent_id = None
         if state_file.exists():
             try:
@@ -503,6 +839,7 @@ def get_worktree_info(cwd: str = "") -> dict | None:
 # ============================================================================
 # Checkpoint File Operations
 # ============================================================================
+
 
 def load_checkpoint(cwd: str) -> dict | None:
     """Load completion checkpoint file from .claude directory.

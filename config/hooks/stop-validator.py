@@ -23,6 +23,7 @@ Module Structure:
 - _sv_validators.py: Validation logic (sub-validators, artifact checks)
 - _sv_templates.py: Blocking message templates
 """
+
 from __future__ import annotations
 
 import json
@@ -37,7 +38,9 @@ from _common import (
     log_debug,
     get_diff_hash,
     load_checkpoint,
-    cleanup_autonomous_state,
+    cleanup_checkpoint_only,
+    reset_state_for_next_task,
+    is_autonomous_mode_active,
 )
 from _sv_validators import (
     validate_checkpoint,
@@ -51,65 +54,9 @@ from _sv_templates import (
 
 
 # ============================================================================
-# Mode Detection
-# ============================================================================
-
-def is_appfix_mode(cwd: str = "") -> bool:
-    """Check if appfix mode is active.
-
-    Checks user-level state first (~/.claude/appfix-state.json) to handle
-    cross-repo scenarios where appfix was started in one repo but work
-    is being done in another (e.g., Terraform infra repo).
-
-    Falls back to project-level state for backward compatibility.
-    """
-    # User-level state takes precedence (cross-repo compatible)
-    user_state = Path.home() / ".claude" / "appfix-state.json"
-    if user_state.exists():
-        return True
-
-    # Fall back to project-level state (backward compatibility)
-    if cwd:
-        project_state = Path(cwd) / ".claude" / "appfix-state.json"
-        if project_state.exists():
-            return True
-
-    return False
-
-
-def is_godo_mode(cwd: str = "") -> bool:
-    """Check if godo mode is active.
-
-    Checks user-level state first (~/.claude/godo-state.json) to handle
-    cross-repo scenarios.
-
-    Falls back to project-level state for backward compatibility.
-    """
-    # User-level state takes precedence (cross-repo compatible)
-    user_state = Path.home() / ".claude" / "godo-state.json"
-    if user_state.exists():
-        return True
-
-    # Fall back to project-level state (backward compatibility)
-    if cwd:
-        project_state = Path(cwd) / ".claude" / "godo-state.json"
-        if project_state.exists():
-            return True
-
-    return False
-
-
-def is_autonomous_mode(cwd: str = "") -> bool:
-    """Check if any autonomous execution mode is active (godo or appfix).
-
-    This unified check determines if strict completion validation applies.
-    """
-    return is_godo_mode(cwd) or is_appfix_mode(cwd)
-
-
-# ============================================================================
 # Session Detection
 # ============================================================================
+
 
 def session_made_code_changes(cwd: str) -> bool:
     """Check if THIS session made code changes (not pre-existing changes).
@@ -159,7 +106,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     """
     # CRITICAL: If autonomous mode active (godo or appfix), checkpoint is ALWAYS required
     # This ensures all changes are validated before stopping
-    if is_autonomous_mode(cwd):
+    if is_autonomous_mode_active(cwd):
         return True
 
     # Check if THIS SESSION made code changes (not pre-existing changes)
@@ -187,6 +134,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
 # Main Entry Point
 # ============================================================================
 
+
 def main():
     """Main stop hook entry point."""
     # Skip for automation roles
@@ -195,7 +143,7 @@ def main():
         log_debug(
             "Skipping: automation role",
             hook_name="stop-validator",
-            parsed_data={"fleet_role": fleet_role}
+            parsed_data={"fleet_role": fleet_role},
         )
         sys.exit(0)
 
@@ -207,9 +155,7 @@ def main():
         input_data = json.loads(raw_input) if raw_input else {}
     except json.JSONDecodeError as e:
         log_debug(
-            f"JSON parse error: {e}",
-            hook_name="stop-validator",
-            raw_input=raw_input
+            f"JSON parse error: {e}", hook_name="stop-validator", raw_input=raw_input
         )
         sys.exit(0)
 
@@ -225,7 +171,7 @@ def main():
     if not requires_checkpoint(cwd, modified_files):
         log_debug(
             "ALLOWING STOP: no checkpoint required (no code changes, no active plan)",
-            hook_name="stop-validator"
+            hook_name="stop-validator",
         )
         sys.exit(0)
 
@@ -237,7 +183,9 @@ def main():
     # =========================================================================
     if not stop_hook_active:
         if checkpoint is None:
-            log_debug("BLOCKING STOP: checkpoint file missing", hook_name="stop-validator")
+            log_debug(
+                "BLOCKING STOP: checkpoint file missing", hook_name="stop-validator"
+            )
             block_no_checkpoint(cwd)
 
         # Checkpoint exists but first stop - validate and block with checklist
@@ -246,19 +194,27 @@ def main():
             log_debug(
                 "BLOCKING STOP: checkpoint validation failed",
                 hook_name="stop-validator",
-                parsed_data={"failures": failures}
+                parsed_data={"failures": failures},
             )
             block_with_continuation(failures, cwd)
 
         # Checkpoint valid - allow stop on first try if everything is complete
-        log_debug("ALLOWING STOP: checkpoint valid on first stop", hook_name="stop-validator")
-        # Clean up state files to prevent stale state affecting future sessions
-        deleted = cleanup_autonomous_state(cwd)
+        log_debug(
+            "ALLOWING STOP: checkpoint valid on first stop", hook_name="stop-validator"
+        )
+        # Sticky session: clean only checkpoint, keep mode state for next task
+        deleted = cleanup_checkpoint_only(cwd)
         if deleted:
             log_debug(
-                "Cleaned up state files on successful stop",
+                "Cleaned up checkpoint (sticky session: mode state preserved)",
                 hook_name="stop-validator",
-                parsed_data={"deleted": deleted}
+                parsed_data={"deleted": deleted},
+            )
+        # Reset per-task fields for the next task iteration
+        if reset_state_for_next_task(cwd):
+            log_debug(
+                "Reset state for next task (iteration incremented)",
+                hook_name="stop-validator",
             )
         sys.exit(0)
 
@@ -268,7 +224,7 @@ def main():
     if checkpoint is None:
         log_debug(
             "BLOCKING STOP: second stop but checkpoint file still missing",
-            hook_name="stop-validator"
+            hook_name="stop-validator",
         )
         block_no_checkpoint(cwd)
 
@@ -277,7 +233,7 @@ def main():
         log_debug(
             "BLOCKING STOP: second stop but checkpoint still invalid",
             hook_name="stop-validator",
-            parsed_data={"failures": failures}
+            parsed_data={"failures": failures},
         )
         block_with_continuation(failures, cwd)
 
@@ -285,15 +241,21 @@ def main():
     log_debug(
         "ALLOWING STOP: checkpoint valid",
         hook_name="stop-validator",
-        parsed_data={"checkpoint": checkpoint}
+        parsed_data={"checkpoint": checkpoint},
     )
-    # Clean up state files to prevent stale state affecting future sessions
-    deleted = cleanup_autonomous_state(cwd)
+    # Sticky session: clean only checkpoint, keep mode state for next task
+    deleted = cleanup_checkpoint_only(cwd)
     if deleted:
         log_debug(
-            "Cleaned up state files on successful stop",
+            "Cleaned up checkpoint (sticky session: mode state preserved)",
             hook_name="stop-validator",
-            parsed_data={"deleted": deleted}
+            parsed_data={"deleted": deleted},
+        )
+    # Reset per-task fields for the next task iteration
+    if reset_state_for_next_task(cwd):
+        log_debug(
+            "Reset state for next task (iteration incremented)",
+            hook_name="stop-validator",
         )
     sys.exit(0)
 
