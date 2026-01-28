@@ -26,7 +26,7 @@ Launch these 6 perspectives using `Task(subagent_type="general-purpose", ...)`:
 Task(
   subagent_type="general-purpose",
   description="Prompting perspective",
-  model="sonnet",
+  model="opus",
   prompt="""You are a prompt engineering specialist analyzing this question:
 
 [INSERT FULL QUESTION]
@@ -49,7 +49,7 @@ Deliver (max 300 words):
 Task(
   subagent_type="general-purpose",
   description="Training perspective",
-  model="sonnet",
+  model="opus",
   prompt="""You are an LLM training and alignment analyst.
 
 Question: [INSERT FULL QUESTION]
@@ -74,7 +74,7 @@ Deliver (max 300 words):
 Task(
   subagent_type="general-purpose",
   description="Domain expert perspective",
-  model="sonnet",
+  model="opus",
   prompt="""You are a domain expert in the field most relevant to this question.
 
 Question: [INSERT FULL QUESTION]
@@ -97,7 +97,7 @@ Deliver (max 300 words):
 Task(
   subagent_type="general-purpose",
   description="Contrarian perspective",
-  model="haiku",
+  model="opus",
   prompt="""You are a rigorous contrarian. Your job is to find weaknesses.
 
 Question/proposal to stress-test: [INSERT FULL QUESTION]
@@ -120,7 +120,7 @@ Be constructive but relentless. Don't strawman.
 Task(
   subagent_type="general-purpose",
   description="Systems perspective",
-  model="sonnet",
+  model="opus",
   prompt="""You are a systems thinker.
 
 Question: [INSERT FULL QUESTION]
@@ -142,7 +142,7 @@ Deliver (max 300 words):
 Task(
   subagent_type="general-purpose",
   description="Pragmatist perspective",
-  model="haiku",
+  model="opus",
   prompt="""You are a pragmatic implementer. Theory is nice, shipping matters.
 
 Question: [INSERT FULL QUESTION]
@@ -178,7 +178,7 @@ Based on the synthesis, launch targeted deep-dive agents:
 Task(
   subagent_type="general-purpose",
   description="Deep-dive: [specific thread]",
-  model="sonnet",
+  model="opus",
   prompt="""Explore this specific tension/gap in depth:
 
 THREAD: [describe the contested point]
@@ -206,7 +206,7 @@ Deliver (max 400 words):
 Task(
   subagent_type="general-purpose",
   description="Red-team the emerging synthesis",
-  model="haiku",
+  model="opus",
   prompt="""Attack this emerging synthesis:
 
 SYNTHESIS SO FAR:
