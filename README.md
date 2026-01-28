@@ -62,14 +62,15 @@ Or natural language: "fix the app", "debug production", "why is it broken"
 ```
 
 **What happens**:
-1. Spawns 6 parallel Opus agents with different lenses:
-   - Prompt Engineering | LLM Training | Domain Expert
-   - Contrarian | Systems Thinking | Pragmatist
-2. Synthesizes to find consensus and tensions
-3. Spawns 2-3 deep-dive agents on contested points
-4. Produces structured answer with confidence levels
+1. Spawns 6 parallel Opus agents (3 dynamic + 3 fixed):
+   - **3 Dynamic**: Generated based on YOUR question (e.g., Software Architect, DevOps Engineer, Team Lead)
+   - **3 Fixed**: Contrarian | Systems Thinker | Pragmatist
+2. **All agents self-educate first**: Search local codebase (Glob/Grep/Read) + web (WebSearch) before answering
+3. Synthesizes to surface **structured disagreements** (not vague "tradeoffs")
+4. **Adversarial dialogue**: Top disagreement goes to 2-round debate between agents
+5. Deep-dive agents investigate contested points with additional research
 
-**Output structure**: Executive Synthesis → Consensus → Tensions → Practical Guidance → Risks → Follow-up Questions
+**Output structure**: Executive Synthesis → Consensus → Structured Disagreements → Dialogue Outcome → Practical Guidance → Risks → Confidence Assessment
 
 ---
 

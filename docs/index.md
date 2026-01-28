@@ -29,7 +29,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 ```
 /heavy Should we use microservices or monolith?
 ```
-6 parallel Opus agents → synthesis → 2-3 deep-dives → structured answer with confidence levels.
+6 parallel Opus agents (3 dynamic + 3 fixed) → **self-educate via codebase + web search** → synthesis with structured disagreements → adversarial dialogue on top tension → deep-dives → confidence-rated answer.
 
 ---
 
