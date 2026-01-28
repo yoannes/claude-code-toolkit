@@ -1,126 +1,108 @@
-# Claude Code Toolkit Documentation
+# Claude Code Toolkit Reference
 
-Central navigation hub for the Claude Code Toolkit documentation.
+## Quick Links
 
-## Quick Start
+- [README](../README.md) — Overview and quick start
+- [Installation](../QUICKSTART.md) — Setup guide
+- [Customization](guides/customization.md) — Create your own extensions
 
-- **New to the toolkit?** Start with [QUICKSTART.md](../QUICKSTART.md)
-- **Just want to use it?** See [README.md](../README.md)
-- **Building custom extensions?** See [Customization Guide](guides/customization.md)
+---
 
-## Core Concepts
+## The Three Core Skills
+
+### `/godo` — Universal Task Execution
+**Use when**: You have a task and want autonomous execution.
+```
+/godo add a logout button to the navbar
+```
+Explores codebase → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
+
+### `/appfix` — Autonomous Debugging
+**Use when**: Something is broken.
+```
+/appfix
+```
+Health checks → collects logs → diagnoses → fixes → deploys → **loops until healthy**.
+
+### `/heavy` — Multi-Perspective Analysis
+**Use when**: Complex question needing broad perspectives.
+```
+/heavy Should we use microservices or monolith?
+```
+6 parallel Opus agents → synthesis → 2-3 deep-dives → structured answer with confidence levels.
+
+---
+
+## All Commands (11)
+
+| Command | Purpose |
+|---------|---------|
+| `/godo` | Autonomous task execution |
+| `/appfix` | Autonomous debugging |
+| `/heavy` | Multi-agent analysis |
+| `/qa` | Architecture audit |
+| `/deslop` | AI slop detection |
+| `/docupdate` | Documentation gaps |
+| `/webtest` | Browser testing |
+| `/interview` | Requirements Q&A |
+| `/weboptimizer` | Performance benchmarking |
+| `/designimprove` | UI improvement |
+| `/uximprove` | UX improvement |
+
+## All Skills (14)
+
+| Skill | Triggers |
+|-------|----------|
+| `godo` | /godo, "go do", "just do it" |
+| `appfix` | /appfix, "fix the app", "debug production" |
+| `heavy` | /heavy, "heavy analysis", "multiple perspectives" |
+| `toolkit` | /toolkit, "update toolkit" |
+| `deploy-pipeline` | /deploy, deployment questions |
+| `webapp-testing` | Browser testing |
+| `frontend-design` | Web UI development |
+| `async-python-patterns` | asyncio, concurrent |
+| `nextjs-tanstack-stack` | Next.js, TanStack |
+| `prompt-engineering-patterns` | Prompt optimization |
+| `ux-designer` | UX design |
+| `design-improver` | UI review |
+| `ux-improver` | UX review |
+| `docs-navigator` | Documentation |
+
+## Hook Events (7)
+
+| Event | Scripts | Purpose |
+|-------|---------|---------|
+| SessionStart | auto-update, session-snapshot, read-docs-reminder | Init |
+| UserPromptSubmit | skill-state-initializer, read-docs-trigger | State files |
+| PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done |
+| PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
+| PostToolUse (Bash) | bash-version-tracker | Track versions |
+| PostToolUse (ExitPlanMode) | plan-execution-reminder | Inject context |
+| PermissionRequest | appfix-auto-approve | Auto-approve |
+| Stop | stop-validator | Validate checkpoint |
+
+---
+
+## Deep Dives
 
 | Document | Description |
 |----------|-------------|
 | [Commands](concepts/commands.md) | How slash commands work |
-| [Skills](concepts/skills.md) | How automatic skills work |
-| [Hooks](concepts/hooks.md) | How lifecycle hooks work |
-
-## Architecture
-
-| Document | Description |
-|----------|-------------|
-| [Architecture Overview](architecture.md) | How everything fits together |
-| [Philosophy](philosophy.md) | Core design principles |
-
-## Guides
-
-| Document | Description |
-|----------|-------------|
-| [Customization](guides/customization.md) | Create your own commands, skills, hooks |
-| [Appfix Deep Dive](skills/appfix-guide.md) | Comprehensive autonomous debugging guide |
-| [Examples](../examples/README.md) | Standalone prompts and templates |
-
-## Reference
-
-| Document | Description |
-|----------|-------------|
-| [Settings Reference](reference/settings.md) | settings.json configuration options |
-
-## Available Commands (11)
-
-| Command | Purpose |
-|---------|---------|
-| `/qa` | Exhaustive architecture audit |
-| `/deslop` | AI slop detection and removal |
-| `/docupdate` | Documentation gap analysis |
-| `/webtest` | Browser automation testing |
-| `/interview` | Requirements clarification |
-| `/weboptimizer` | Performance benchmarking |
-| `/config-audit` | Environment variable analysis |
-| `/mobiletest` | Maestro E2E test runner |
-| `/mobileaudit` | Mobile UI/design audit |
-| `/designimprove` | Recursive UI design improvement |
-| `/uximprove` | Recursive UX improvement |
-
-## Available Skills (14)
-
-| Skill | Triggers On |
-|-------|-------------|
-| `toolkit` | /toolkit, "update toolkit", "toolkit status" - toolkit management and info |
-| `godo` | /godo, "go do", "just do it" - task-agnostic autonomous execution |
-| `appfix` | "fix the app", autonomous debugging (extends godo) |
-| `heavy` | /heavy, "heavy analysis", "multiple perspectives" - multi-agent deep analysis |
-| `deploy-pipeline` | /deploy, deployment environments - Motium deployment guide |
-| `async-python-patterns` | asyncio, concurrent programming |
-| `nextjs-tanstack-stack` | Next.js, TanStack, Zustand |
-| `prompt-engineering-patterns` | Prompt optimization |
-| `frontend-design` | Web UI development |
-| `webapp-testing` | Browser testing |
-| `ux-designer` | UX design |
-| `design-improver` | UI design review |
-| `ux-improver` | UX usability review |
-| `docs-navigator` | Documentation navigation |
-
-## Active Hooks (7 Event Types)
-
-| Event | Scripts | Purpose |
-|-------|---------|---------|
-| SessionStart | auto-update.py, session-snapshot.py, read-docs-reminder.py | Auto-update, git diff snapshot, doc reading |
-| UserPromptSubmit | read-docs-trigger.py, skill-state-initializer.py | Doc triggers, state file creation |
-| PreToolUse (Edit/Write) | plan-mode-enforcer.py | Blocks edits until plan mode done |
-| PostToolUse (Edit/Write) | checkpoint-invalidator.py | Resets stale checkpoint flags |
-| PostToolUse (Bash) | bash-version-tracker.py | Tracks version after commits |
-| PostToolUse (ExitPlanMode) | plan-execution-reminder.py, plan-mode-tracker.py | Execution context, state update |
-| PermissionRequest | appfix-auto-approve.py | Auto-approve all tools during godo/appfix |
-| Stop | stop-validator.py | Validates completion checkpoint |
-
-## Testing
-
-```bash
-# Hook subprocess tests (fast, no API cost)
-cd prompts && python3 -m pytest config/hooks/tests/ -v
-
-# Claude headless E2E tests (real sessions)
-cd prompts && bash scripts/test-e2e-headless.sh
-
-# tmux interactive E2E tests
-cd prompts && bash scripts/test-e2e-tmux.sh --observe
-```
+| [Skills](concepts/skills.md) | How skills auto-trigger |
+| [Hooks](concepts/hooks.md) | Hook lifecycle |
+| [Architecture](architecture.md) | System design |
+| [Appfix Guide](skills/appfix-guide.md) | Complete debugging guide |
 
 ## Directory Structure
 
 ```
 prompts/
-├── README.md              # Overview
-├── QUICKSTART.md          # 5-minute setup
 ├── config/
 │   ├── settings.json      # Hook definitions
-│   ├── commands/          # 11 command specs
-│   ├── hooks/             # 7 active hooks + 5 utilities
-│   │   └── tests/         # Pytest hook integration tests
-│   └── skills/            # 11 skill directories
-├── scripts/
-│   ├── install.sh         # Toolkit installer
-│   ├── doctor.sh          # Health check
-│   ├── test-e2e-headless.sh  # Headless E2E tests
-│   └── test-e2e-tmux.sh     # Interactive E2E tests
-├── docs/
-│   ├── index.md           # You are here
-│   ├── architecture.md    # System design
-│   ├── philosophy.md      # Core principles
-│   ├── concepts/          # Deep dives
-│   ├── skills/            # Skill deep-dive guides
-│   └── guides/            # How-to guides
-└── examples/              # Sample configurations
+│   ├── commands/          # 11 commands
+│   ├── hooks/             # Python hooks
+│   └── skills/            # 14 skills
+├── docs/                  # Documentation
+├── scripts/               # install.sh, doctor.sh
+└── README.md
 ```
