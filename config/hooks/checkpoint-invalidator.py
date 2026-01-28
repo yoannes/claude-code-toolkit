@@ -238,26 +238,57 @@ def get_fields_to_invalidate(primary_field: str) -> set[str]:
     return to_invalidate
 
 
+def normalize_version(version: str) -> str:
+    """
+    Normalize version by stripping the -dirty suffix.
+
+    This prevents invalidation loops where:
+    1. Field set at "abc1234"
+    2. Edit causes version to become "abc1234-dirty"
+    3. Old logic: "abc1234" != "abc1234-dirty" → INVALIDATE (wrong!)
+
+    With normalization:
+    - "abc1234" → "abc1234"
+    - "abc1234-dirty" → "abc1234"
+    - Comparison: "abc1234" == "abc1234" → NO invalidation (correct!)
+
+    Only actual commit changes (abc → def) should trigger invalidation.
+    """
+    if version.endswith("-dirty"):
+        return version[:-6]  # Remove "-dirty" suffix
+    return version
+
+
 def invalidate_stale_fields(checkpoint: dict, current_version: str) -> tuple[dict, list[str]]:
     """
     Check all version-dependent fields and invalidate stale ones.
     Returns (modified_checkpoint, list_of_invalidated_fields).
+
+    NOTE: Versions are normalized before comparison to prevent invalidation loops.
+    "abc1234" and "abc1234-dirty" are considered the same version.
+    Only actual commit changes trigger invalidation.
     """
     report = checkpoint.get("self_report", {})
     invalidated = []
 
+    # Normalize current version for comparison
+    current_normalized = normalize_version(current_version)
+
     for field in VERSION_DEPENDENT_FIELDS:
         if report.get(field, False):
             field_version = report.get(f"{field}_at_version", "")
-            if field_version and field_version != current_version:
-                # Field is stale - invalidate it and all dependents
-                fields_to_reset = get_fields_to_invalidate(field)
-                for f in fields_to_reset:
-                    if report.get(f, False):
-                        report[f] = False
-                        report[f"{f}_at_version"] = ""
-                        if f not in invalidated:
-                            invalidated.append(f)
+            if field_version:
+                # Normalize field version for comparison
+                field_normalized = normalize_version(field_version)
+                if field_normalized != current_normalized:
+                    # Field is stale - invalidate it and all dependents
+                    fields_to_reset = get_fields_to_invalidate(field)
+                    for f in fields_to_reset:
+                        if report.get(f, False):
+                            report[f] = False
+                            report[f"{f}_at_version"] = ""
+                            if f not in invalidated:
+                                invalidated.append(f)
 
     return checkpoint, invalidated
 
