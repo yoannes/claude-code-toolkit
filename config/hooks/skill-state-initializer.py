@@ -28,7 +28,7 @@ from pathlib import Path
 # These should match the triggers defined in the respective SKILL.md files
 SKILL_TRIGGERS = {
     "appfix": [
-        r"^/appfix\b",           # Slash command
+        r"(?:^|\s)/appfix\b",    # Slash command (at start or after whitespace)
         r"\bfix the app\b",      # Natural language
         r"\bdebug production\b",
         r"\bcheck staging\b",
@@ -40,7 +40,7 @@ SKILL_TRIGGERS = {
         r"\bstaging (is )?(down|broken|failing)\b",
     ],
     "godo": [
-        r"^/godo\b",             # Slash command
+        r"(?:^|\s)/godo\b",      # Slash command (at start or after whitespace)
         r"\bgo do\b",            # Natural language
         r"\bjust do it\b",
         r"\bexecute this\b",
