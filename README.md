@@ -63,14 +63,14 @@ Or natural language: "fix the app", "debug production", "why is it broken"
 
 **What happens**:
 1. Spawns 6 parallel Opus agents (3 dynamic + 3 fixed):
-   - **3 Dynamic**: Generated based on YOUR question (e.g., Software Architect, DevOps Engineer, Team Lead)
-   - **3 Fixed**: Contrarian | Systems Thinker | Pragmatist
-2. **All agents self-educate first**: Search local codebase (Glob/Grep/Read) + web (WebSearch) before answering
-3. Synthesizes to surface **structured disagreements** (not vague "tradeoffs")
-4. **Adversarial dialogue**: Top disagreement goes to 2-round debate between agents
-5. Deep-dive agents investigate contested points with additional research
+   - **3 Dynamic**: Perspectives that will DISAGREE (e.g., Feature Dev vs Platform Engineer vs Finance)
+   - **3 Fixed**: Critical Reviewer | Architecture Advisor | Shipping Engineer
+2. **All agents self-educate first**: Search codebase, web, and vendor docs (PydanticAI, Logfire, etc.)
+3. **Tech stack aware**: Agents know Motium runs Next.js + PydanticAI + Azure Container Apps
+4. Synthesizes to surface **structured disagreements** (not vague "tradeoffs")
+5. **Adversarial dialogue**: Top disagreement goes to 2-round debate between agents
 
-**Output structure**: Executive Synthesis → Consensus → Structured Disagreements → Dialogue Outcome → Practical Guidance → Risks → Confidence Assessment
+**Philosophy**: Principles over rubrics. No rigid word counts or scoring. Let models reason freely.
 
 ---
 

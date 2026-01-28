@@ -29,7 +29,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 ```
 /heavy Should we use microservices or monolith?
 ```
-6 parallel Opus agents (3 dynamic + 3 fixed) → **self-educate via codebase + web search** → synthesis with structured disagreements → adversarial dialogue on top tension → deep-dives → confidence-rated answer.
+6 parallel Opus agents (3 dynamic + 3 fixed: Critical Reviewer, Architecture Advisor, Shipping Engineer) → **self-educate via codebase + web + vendor docs** → tech-stack aware (Next.js, PydanticAI, Azure) → structured disagreements → adversarial dialogue → principles over rubrics.
 
 ---
 
