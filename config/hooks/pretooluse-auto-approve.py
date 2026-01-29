@@ -95,11 +95,13 @@ def main():
 
     # Auto-approve the tool using PreToolUse decision control
     # This returns permissionDecision: "allow" which bypasses the permission system
+    # NOTE: Do NOT include permissionDecisionReason for allow decisions - Claude Code
+    # treats any permissionDecisionReason as an error/block message regardless of
+    # the permissionDecision value
     output = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "permissionDecisionReason": f"Auto-approved by {state_type} mode",
         }
     }
 
