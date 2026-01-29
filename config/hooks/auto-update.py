@@ -372,11 +372,46 @@ Manual update: cd {repo_path} && git pull
 """)
         sys.exit(0)
 
-    # Pull succeeded - check if settings.json changed
+    # Verify HEAD actually changed to the expected commit
+    new_local_head = get_local_head(repo_path)
+    if new_local_head and new_local_head != remote_head:
+        # Pull "succeeded" but HEAD didn't move - likely local is ahead of remote
+        # This happens when local has unpushed commits that include the remote commits
+        log_debug(
+            f"pull completed but HEAD unchanged: "
+            f"expected {remote_head[:7]}, got {new_local_head[:7]}"
+        )
+        state["last_check_timestamp"] = now
+        state["last_check_result"] = "local_ahead"
+        state["local_commit_at_check"] = new_local_head[:7]
+        state["remote_commit_at_check"] = remote_head[:7]
+        state["settings_hash_at_session_start"] = current_settings_hash
+        save_state(state)
+        print(f"""
+⚠️ TOOLKIT LOCAL CHANGES DETECTED
+
+Your local toolkit has unpushed commits ahead of origin/main.
+
+Local:  {new_local_head[:7]}
+Remote: {remote_head[:7]}
+
+The auto-update cannot fast-forward. Options:
+1. Push your local changes: cd {repo_path} && git push
+2. Reset to remote: cd {repo_path} && git reset --hard origin/main
+3. Rebase on remote: cd {repo_path} && git rebase origin/main
+
+Auto-update will resume once local matches or is behind remote.
+""")
+        sys.exit(0)
+
+    # Pull succeeded and HEAD moved - check if settings.json changed
     settings_hash_after = get_settings_hash()
     settings_changed = settings_hash_before != settings_hash_after
 
-    log_debug(f"pull succeeded, settings_changed: {settings_changed}")
+    log_debug(
+        f"pull succeeded: {local_head[:7]} -> {new_local_head[:7] if new_local_head else remote_head[:7]}, "
+        f"settings_changed: {settings_changed}"
+    )
 
     # Get commit summary
     commit_summary = get_commit_summary(repo_path, local_head[:7], remote_head[:7])
