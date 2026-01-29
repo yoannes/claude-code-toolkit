@@ -39,10 +39,11 @@ from _common import (
 # Deactivation patterns - checked BEFORE activation
 DEACTIVATION_PATTERNS = [
     r"(?:^|\s)/appfix\s+off\b",
+    r"(?:^|\s)/mobileappfix\s+off\b",
     r"(?:^|\s)/godo\s+off\b",
     r"\bstop autonomous mode\b",
     r"\bdisable auto[- ]?approval\b",
-    r"\bturn off (appfix|godo)\b",
+    r"\bturn off (appfix|mobileappfix|godo)\b",
 ]
 
 # Trigger patterns for each skill
@@ -50,7 +51,9 @@ DEACTIVATION_PATTERNS = [
 SKILL_TRIGGERS = {
     "appfix": [
         r"(?:^|\s)/appfix\b",  # Slash command (at start or after whitespace)
+        r"(?:^|\s)/mobileappfix\b",  # Mobile variant - uses same appfix-state.json
         r"\bfix the app\b",  # Natural language
+        r"\bfix the mobile app\b",  # Mobile variant
         r"\bdebug production\b",
         r"\bcheck staging\b",
         r"\bwhy is it broken\b",
@@ -59,6 +62,8 @@ SKILL_TRIGGERS = {
         r"\bapp crashed\b",
         r"\bproduction (is )?(down|broken|failing)\b",
         r"\bstaging (is )?(down|broken|failing)\b",
+        r"\bmaestro (tests? )?(failing|broken|not working)\b",  # Mobile E2E triggers
+        r"\bsimulator (crash|fail|not working)\b",  # Mobile-specific
     ],
     "godo": [
         r"(?:^|\s)/godo\b",  # Slash command (at start or after whitespace)
