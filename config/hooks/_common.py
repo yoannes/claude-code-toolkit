@@ -388,6 +388,7 @@ def get_autonomous_state(cwd: str) -> tuple[dict | None, str | None]:
     """Get the autonomous mode state file and its type, filtering expired.
 
     Checks for godo-state.json first, then appfix-state.json.
+    Checks both project-level AND user-level state files.
     Returns None for expired state files.
 
     Args:
@@ -397,13 +398,35 @@ def get_autonomous_state(cwd: str) -> tuple[dict | None, str | None]:
         Tuple of (state_dict, state_type) where state_type is 'godo' or 'appfix'
         Returns (None, None) if no state file found or all expired
     """
+    # Check project-level godo state
     godo_state = load_state_file(cwd, "godo-state.json")
     if godo_state and not is_state_expired(godo_state):
         return godo_state, "godo"
 
+    # Check project-level appfix state
     appfix_state = load_state_file(cwd, "appfix-state.json")
     if appfix_state and not is_state_expired(appfix_state):
         return appfix_state, "appfix"
+
+    # Check user-level state files (for cross-directory support)
+    # This matches the behavior of is_appfix_active() and is_godo_active()
+    user_godo_path = Path.home() / ".claude" / "godo-state.json"
+    if user_godo_path.exists():
+        try:
+            user_godo_state = json.loads(user_godo_path.read_text())
+            if not is_state_expired(user_godo_state):
+                return user_godo_state, "godo"
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    user_appfix_path = Path.home() / ".claude" / "appfix-state.json"
+    if user_appfix_path.exists():
+        try:
+            user_appfix_state = json.loads(user_appfix_path.read_text())
+            if not is_state_expired(user_appfix_state):
+                return user_appfix_state, "appfix"
+        except (json.JSONDecodeError, IOError):
+            pass
 
     return None, None
 
