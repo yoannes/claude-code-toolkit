@@ -80,7 +80,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `skill-tester` | Deprecated | → skill-sandbox |
 | `skilltest` | Deprecated | → skill-sandbox |
 
-## Hook Events (10)
+## Hook Events (11)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
@@ -90,7 +90,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | PreToolUse (Bash) | deploy-enforcer | Block subagent/production deploys |
 | PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
 | PostToolUse (Write) | checkpoint-write-validator | Warn on claims without evidence |
-| PostToolUse (Bash) | bash-version-tracker | Track version changes |
+| PostToolUse (Bash) | bash-version-tracker, doc-updater-async | Track versions, suggest doc updates |
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
 | PermissionRequest | appfix-auto-approve | Auto-approve all tools |

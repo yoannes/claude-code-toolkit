@@ -1238,6 +1238,8 @@ Permission patterns recognized: `prod`, `production`, `deploy to prod`, `push to
 
 **bash-version-tracker.py** (PostToolUse/Bash): Detects version-changing commands (git commit, az CLI, gh workflow run) and invalidates stale checkpoint fields. Prevents the scenario where code changes go undetected.
 
+**doc-updater-async.py** (PostToolUse/Bash): Detects git commits during appfix/godo sessions and creates a task file for async documentation updates. Suggests spawning a background Sonnet agent to update relevant docs based on the commit diff. Uses /heavy for multi-perspective analysis of architectural changes.
+
 **checkpoint-invalidator.py** (PostToolUse/Edit/Write): Proactively resets stale checkpoint flags when code is edited, before the stop hook checks. Prevents false checkpoint claims.
 
 **checkpoint-write-validator.py** (PostToolUse/Write): Warns (does not block) when writing checkpoint claims without evidence. Catches issues early before the stop hook rejects them.

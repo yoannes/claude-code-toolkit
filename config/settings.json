@@ -152,6 +152,11 @@
             "type": "command",
             "command": "python3 ~/.claude/hooks/bash-version-tracker.py",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/doc-updater-async.py",
+            "timeout": 10
           }
         ]
       },

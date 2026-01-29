@@ -167,6 +167,16 @@ ALLOWED_WRITES=(
     '^az storage file upload'
     '^az storage file upload-batch'
     '^az storage file copy'
+
+    # Azure AD user management
+    '^az ad user create'
+    '^az ad user update'
+    '^az ad user delete'
+
+    # Microsoft Graph REST API
+    '^az rest --method GET'      # Read operations
+    '^az rest --method POST'     # License assignment, user creation via Graph
+    '^az rest --method PATCH'    # User updates via Graph
 )
 
     # Check if command matches allowed write operations
