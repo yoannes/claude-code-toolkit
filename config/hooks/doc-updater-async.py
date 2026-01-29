@@ -19,7 +19,6 @@ Exit codes:
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -184,48 +183,6 @@ Use the /heavy skill if you need multiple perspectives on what to document.
     task_file.write_text(json.dumps(task, indent=2))
     return str(task_file)
 
-
-def spawn_async_doc_updater(cwd: str, task_file: str) -> bool:
-    """Spawn an async Claude agent to update docs.
-
-    Uses the Task tool approach by outputting instructions for the main agent.
-    Returns True if spawn was initiated.
-    """
-    # Instead of actually spawning a subprocess (which won't have Claude context),
-    # we output a JSON message that instructs the main Claude session to spawn
-    # a Task agent for doc updates.
-
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "additionalContext": f"""
-ASYNC DOC UPDATE TRIGGERED
-
-A commit was detected during this appfix/godo session.
-Documentation may need updating based on the changes.
-
-Task file created: {task_file}
-
-RECOMMENDED: After completing your current fix-verify loop, consider running:
-  Use the Task tool to spawn an async agent:
-
-  Task(
-    description="Update docs from commit",
-    subagent_type="general-purpose",
-    model="sonnet",
-    run_in_background=true,
-    prompt="Read {task_file} and update relevant documentation based on the commit diff. Use /heavy if architectural decisions need multi-perspective analysis."
-  )
-
-This is optional - only spawn the doc updater if:
-1. The commit made significant changes (not just bug fixes)
-2. The changes affect APIs, architecture, or configuration
-3. You have time before the fix-verify loop needs attention
-""",
-        }
-    }
-
-    return True
 
 
 def main():
