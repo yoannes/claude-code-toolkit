@@ -27,9 +27,63 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Get the directory where this script lives
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Handle both direct execution and sourced/piped scenarios
+if [ -n "${BASH_SOURCE[0]}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    # BASH_SOURCE is empty (piped execution) or invalid
+    # Try to find the toolkit in common locations
+    POSSIBLE_LOCATIONS=(
+        "$PWD"
+        "$PWD/claude-code-toolkit"
+        "$HOME/claude-code-toolkit"
+        "$(dirname "$PWD")/claude-code-toolkit"
+    )
+
+    SCRIPT_DIR=""
+    for loc in "${POSSIBLE_LOCATIONS[@]}"; do
+        if [ -f "$loc/scripts/install.sh" ] && [ -d "$loc/config" ]; then
+            SCRIPT_DIR="$loc/scripts"
+            break
+        fi
+    done
+
+    if [ -z "$SCRIPT_DIR" ]; then
+        echo -e "${RED}ERROR: Cannot determine toolkit location.${NC}" >&2
+        echo "" >&2
+        echo "This happens when the script is run via piping (curl | bash) or from" >&2
+        echo "a directory that doesn't contain the toolkit." >&2
+        echo "" >&2
+        echo "Solutions:" >&2
+        echo "  1. Clone the repo first, then run install.sh directly:" >&2
+        echo "     git clone <repo-url> ~/claude-code-toolkit" >&2
+        echo "     cd ~/claude-code-toolkit && ./scripts/install.sh" >&2
+        echo "" >&2
+        echo "  2. Or run from inside the toolkit directory:" >&2
+        echo "     cd /path/to/claude-code-toolkit && ./scripts/install.sh" >&2
+        echo "" >&2
+        exit 1
+    fi
+fi
+
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 CONFIG_DIR="$REPO_DIR/config"
+
+# Validate that CONFIG_DIR exists and has expected structure
+if [ ! -d "$CONFIG_DIR" ] || [ ! -f "$CONFIG_DIR/settings.json" ]; then
+    echo -e "${RED}ERROR: Invalid toolkit structure at $REPO_DIR${NC}" >&2
+    echo "Expected to find $CONFIG_DIR/settings.json" >&2
+    echo "" >&2
+    echo "Make sure you're running from inside the claude-code-toolkit directory." >&2
+    exit 1
+fi
+
+# On WSL, convert Windows paths to proper format if needed
+if [[ "$REPO_DIR" =~ ^/mnt/[a-z]/ ]]; then
+    # Normalize path by resolving it through readlink
+    REPO_DIR="$(cd "$REPO_DIR" && pwd -P)"
+    CONFIG_DIR="$REPO_DIR/config"
+fi
 
 # Parse arguments
 FORCE=false
@@ -120,6 +174,16 @@ verify_hook_imports() {
         fi
     done
 
+    # Test Azure guard hook (bash script)
+    if [ -f "$HOOKS_DIR/azure-command-guard.sh" ]; then
+        if bash -n "$HOOKS_DIR/azure-command-guard.sh" 2>/dev/null; then
+            echo -e "  ${GREEN}✓ azure-command-guard.sh syntax OK${NC}"
+        else
+            echo -e "  ${RED}✗ azure-command-guard.sh has syntax errors${NC}"
+            return 1
+        fi
+    fi
+
     return 0
 }
 
@@ -131,7 +195,13 @@ verify_state_detection() {
 
     # Create a test state file
     mkdir -p "$TEST_DIR/.claude"
-    echo '{"iteration": 1, "plan_mode_completed": true}' > "$TEST_DIR/.claude/appfix-state.json"
+    cat > "$TEST_DIR/.claude/appfix-state.json" <<EOF
+{
+  "iteration": 1,
+  "plan_mode_completed": true,
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
 
     # Test detection
     local RESULT=$(python3 -c "
@@ -185,7 +255,13 @@ verify_auto_approval() {
 
     # Create a test state file
     mkdir -p "$TEST_DIR/.claude"
-    echo '{"iteration": 1, "plan_mode_completed": true}' > "$TEST_DIR/.claude/appfix-state.json"
+    cat > "$TEST_DIR/.claude/appfix-state.json" <<EOF
+{
+  "iteration": 1,
+  "plan_mode_completed": true,
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
 
     # Run the auto-approval hook with empty stdin (simulating PermissionRequest)
     local RESULT=$(cd "$TEST_DIR" && echo "" | python3 "$HOOKS_DIR/appfix-auto-approve.py" 2>&1)
@@ -202,6 +278,47 @@ verify_auto_approval() {
         echo "    Got: $RESULT"
         return 1
     fi
+}
+
+verify_azure_guard() {
+    echo -e "${BLUE}Testing Azure command guard hook...${NC}"
+
+    local HOOKS_DIR="$HOME/.claude/hooks"
+    local AZURE_GUARD="$HOOKS_DIR/azure-command-guard.sh"
+
+    if [ ! -f "$AZURE_GUARD" ]; then
+        echo -e "  ${YELLOW}⚠ azure-command-guard.sh not found (optional)${NC}"
+        return 0
+    fi
+
+    # Test 1: Safe command should be allowed
+    local SAFE_INPUT='{"tool_name": "Bash", "tool_input": {"command": "az account show"}}'
+    if echo "$SAFE_INPUT" | "$AZURE_GUARD" >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ Allows safe commands (az account show)${NC}"
+    else
+        echo -e "  ${RED}✗ Incorrectly blocks safe commands${NC}"
+        return 1
+    fi
+
+    # Test 2: Dangerous command should be blocked
+    local DANGEROUS_INPUT='{"tool_name": "Bash", "tool_input": {"command": "az group delete --name test"}}'
+    if echo "$DANGEROUS_INPUT" | "$AZURE_GUARD" >/dev/null 2>&1; then
+        echo -e "  ${RED}✗ Fails to block dangerous commands${NC}"
+        return 1
+    else
+        echo -e "  ${GREEN}✓ Blocks dangerous commands (az group delete)${NC}"
+    fi
+
+    # Test 3: Allowed write (KeyVault secret) should be allowed
+    local ALLOWED_WRITE='{"tool_name": "Bash", "tool_input": {"command": "az keyvault secret set --vault-name test --name key --value val"}}'
+    if echo "$ALLOWED_WRITE" | "$AZURE_GUARD" >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ Allows KeyVault secret operations${NC}"
+    else
+        echo -e "  ${RED}✗ Incorrectly blocks KeyVault secret operations${NC}"
+        return 1
+    fi
+
+    return 0
 }
 
 verify_optional_tools() {
@@ -230,6 +347,53 @@ verify_optional_tools() {
     return 0
 }
 
+add_to_parent_gitignore() {
+    echo -e "${BLUE}Checking parent repository .gitignore...${NC}"
+
+    # Get the parent directory (where the toolkit is cloned)
+    local PARENT_DIR="$(dirname "$REPO_DIR")"
+    local TOOLKIT_DIRNAME="$(basename "$REPO_DIR")"
+    local GITIGNORE_PATH="$PARENT_DIR/.gitignore"
+
+    # Check if parent is a git repository
+    if [ ! -d "$PARENT_DIR/.git" ]; then
+        echo -e "  ${YELLOW}⚠ Parent directory is not a git repository${NC}"
+        echo "    Skipping .gitignore update"
+        return 0
+    fi
+
+    # Check if .gitignore exists, create if not
+    if [ ! -f "$GITIGNORE_PATH" ]; then
+        echo -e "  ${YELLOW}⚠ No .gitignore in parent repo${NC}"
+        echo "    Skipping .gitignore update"
+        return 0
+    fi
+
+    # Check if toolkit is already in .gitignore
+    if grep -qE "^/?${TOOLKIT_DIRNAME}/?$" "$GITIGNORE_PATH" 2>/dev/null; then
+        echo -e "  ${GREEN}✓ Already in parent .gitignore${NC}"
+        return 0
+    fi
+
+    # Add toolkit to .gitignore
+    echo "" >> "$GITIGNORE_PATH"
+    echo "# Claude Code Toolkit (separate git repo)" >> "$GITIGNORE_PATH"
+    echo "/${TOOLKIT_DIRNAME}/" >> "$GITIGNORE_PATH"
+
+    echo -e "  ${GREEN}✓ Added /${TOOLKIT_DIRNAME}/ to parent .gitignore${NC}"
+
+    # Remove from git tracking if it's already tracked
+    cd "$PARENT_DIR" 2>/dev/null || return 0
+    if git ls-files --error-unmatch "$TOOLKIT_DIRNAME" &>/dev/null; then
+        echo -e "  ${BLUE}Removing from git tracking...${NC}"
+        git rm -r --cached "$TOOLKIT_DIRNAME" &>/dev/null || true
+        echo -e "  ${GREEN}✓ Removed from git tracking${NC}"
+        echo -e "  ${YELLOW}→ You'll need to commit this change to .gitignore${NC}"
+    fi
+
+    return 0
+}
+
 run_full_verification() {
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
@@ -244,6 +408,7 @@ run_full_verification() {
     verify_hook_imports || FAILED=1
     verify_state_detection || FAILED=1
     verify_auto_approval || FAILED=1
+    verify_azure_guard || FAILED=1
     verify_optional_tools
 
     echo ""
@@ -353,11 +518,15 @@ except Exception as e:
     sys.exit(1)
 
 print(\"Checking state detection...\")
-import tempfile, json
+import tempfile, json, datetime
 test_dir = tempfile.mkdtemp()
 os.makedirs(f\"{test_dir}/.claude\", exist_ok=True)
 with open(f\"{test_dir}/.claude/appfix-state.json\", \"w\") as f:
-    json.dump({\"iteration\": 1, \"plan_mode_completed\": True}, f)
+    json.dump({
+        \"iteration\": 1,
+        \"plan_mode_completed\": True,
+        \"started_at\": datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y-%m-%dT%H:%M:%SZ\")
+    }, f)
 
 if is_appfix_active(test_dir):
     print(\"  ✓ State file detection works\")
@@ -373,7 +542,11 @@ import subprocess
 test_dir = tempfile.mkdtemp()
 os.makedirs(f\"{test_dir}/.claude\", exist_ok=True)
 with open(f\"{test_dir}/.claude/appfix-state.json\", \"w\") as f:
-    json.dump({\"iteration\": 1, \"plan_mode_completed\": True}, f)
+    json.dump({
+        \"iteration\": 1,
+        \"plan_mode_completed\": True,
+        \"started_at\": datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y-%m-%dT%H:%M:%SZ\")
+    }, f)
 
 hook_path = os.path.join(hooks_dir, \"appfix-auto-approve.py\")
 result = subprocess.run(
@@ -584,6 +757,38 @@ fi
 
 echo ""
 echo -e "${GREEN}Symlinks created!${NC}"
+echo ""
+
+# Verify symlinks point to valid targets
+echo -e "${BLUE}Verifying symlink targets...${NC}"
+SYMLINK_VALID=true
+for ITEM in settings.json hooks commands skills; do
+    SPATH="$HOME/.claude/$ITEM"
+    if [ -L "$SPATH" ]; then
+        TARGET=$(readlink "$SPATH" 2>/dev/null || echo "UNKNOWN")
+        if [ -e "$SPATH" ]; then
+            echo -e "  ${GREEN}✓${NC} $ITEM → $TARGET"
+        else
+            echo -e "  ${RED}✗ BROKEN${NC} $ITEM → $TARGET"
+            SYMLINK_VALID=false
+        fi
+    fi
+done
+
+if [ "$SYMLINK_VALID" = false ]; then
+    echo ""
+    echo -e "${RED}ERROR: Some symlinks are broken!${NC}"
+    echo "This usually happens when the script was run from a temporary directory."
+    echo ""
+    echo "To fix:"
+    echo "  1. cd to the permanent toolkit location"
+    echo "  2. Run ./scripts/install.sh again"
+    exit 1
+fi
+echo ""
+
+# Add toolkit to parent repo's .gitignore
+add_to_parent_gitignore
 echo ""
 
 # Run verification
