@@ -94,11 +94,21 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/deploy-enforcer.py",
-            "timeout": 5
+            "timeout": 25
           },
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/azure-command-guard.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/exa-search-enforcer.py",
             "timeout": 5
           }
         ]
@@ -136,11 +146,6 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/checkpoint-invalidator.py",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/checkpoint-write-validator.py",
             "timeout": 5
           }
         ]
@@ -190,10 +195,11 @@
     ],
     "PermissionRequest": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
+            "command": "python3 ~/.claude/hooks/permissionrequest-auto-approve.py",
             "timeout": 5
           }
         ]
