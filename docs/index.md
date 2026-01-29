@@ -33,7 +33,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 
 ---
 
-## All Commands (14)
+## All Slash Commands (11 commands + 3 core skills)
 
 | Command | Purpose |
 |---------|---------|
@@ -52,13 +52,13 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `/designimprove` | UI improvement |
 | `/uximprove` | UX improvement |
 
-## All Skills (16 active, 2 deprecated)
+## All Skills (17 active, 2 deprecated)
 
 | Skill | Triggers |
 |-------|----------|
-| `godo` | /godo, "go do", "just do it" |
+| `godo` | /godo, "go do", "just do it", "execute this" |
 | `appfix` | /appfix, "fix the app", "debug production" |
-| `heavy` | /heavy, "heavy analysis", "multiple perspectives" |
+| `heavy` | /heavy, "heavy analysis", "multiple perspectives", "debate this" |
 | `mobileappfix` | Mobile app debugging, Maestro tests |
 | `skill-sandbox` | /skill-sandbox, "test skill", "sandbox test" |
 | `toolkit` | /toolkit, "update toolkit" |
@@ -72,6 +72,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `design-improver` | UI review |
 | `ux-improver` | UX review |
 | `docs-navigator` | Documentation |
+| `revonc-eas-deploy` | /eas, /revonc-deploy, "deploy to testflight", "build ios/android" |
 
 ### Deprecated Skills
 
@@ -80,21 +81,22 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | `skill-tester` | Deprecated | → skill-sandbox |
 | `skilltest` | Deprecated | → skill-sandbox |
 
-## Hook Events (11)
+## Registered Hooks (18 scripts)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
 | SessionStart | auto-update, session-snapshot, read-docs-reminder | Init and toolkit update |
 | UserPromptSubmit | skill-state-initializer, read-docs-trigger | State files and doc suggestions |
+| PreToolUse (*) | pretooluse-auto-approve | Auto-approve during autonomous mode |
 | PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done |
-| PreToolUse (Bash) | deploy-enforcer | Block subagent/production deploys |
+| PreToolUse (Bash) | deploy-enforcer, azure-command-guard | Block deploys, guard Azure CLI |
+| PreToolUse (WebSearch) | exa-search-enforcer | Remind to use Exa MCP instead |
 | PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
-| PostToolUse (Write) | checkpoint-write-validator | Warn on claims without evidence |
 | PostToolUse (Bash) | bash-version-tracker, doc-updater-async | Track versions, suggest doc updates |
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
-| PermissionRequest | appfix-auto-approve | Auto-approve all tools |
 | Stop | stop-validator | Validate checkpoint |
+| PermissionRequest | permissionrequest-auto-approve | Auto-approve during autonomous mode |
 
 ---
 
@@ -107,6 +109,11 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 | [Hooks](concepts/hooks.md) | Hook lifecycle |
 | [Architecture](architecture.md) | System design |
 | [Appfix Guide](skills/appfix-guide.md) | Complete debugging guide |
+| [Godo Guide](skills/godo-guide.md) | Autonomous task execution guide |
+| [Philosophy](philosophy.md) | Core philosophy and principles |
+| [Settings Reference](reference/settings.md) | Configuration options |
+| [Azure Command Guard](hooks/azure-command-guard.md) | Azure CLI security hook |
+| [Azure Guard Testing](hooks/azure-guard-testing.md) | Testing the Azure guard |
 
 ## Directory Structure
 
@@ -114,9 +121,9 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 prompts/
 ├── config/
 │   ├── settings.json      # Hook definitions
-│   ├── commands/          # 11 command files (+ 3 skill-commands)
-│   ├── hooks/             # Python hooks (15 registered)
-│   └── skills/            # 16 skills (+ 2 deprecated)
+│   ├── commands/          # 11 skill definition files (+ 3 skill-commands)
+│   ├── hooks/             # Python/bash hooks (18 registered)
+│   └── skills/            # 17 skills (+ 2 deprecated)
 ├── docs/                  # Documentation
 ├── scripts/               # install.sh, doctor.sh
 └── README.md
