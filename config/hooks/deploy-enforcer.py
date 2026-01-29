@@ -2,8 +2,8 @@
 """
 PreToolUse hook for deployment enforcement.
 
-Prevents subagents from deploying and blocks production deploys in autonomous mode,
-unless explicitly permitted in the plan via allowedPrompts.
+Prevents subagents from deploying, blocks concurrent deploys, and gates production
+deploys in autonomous mode.
 
 Hook event: PreToolUse
 Matcher: Bash
@@ -12,7 +12,9 @@ Behavior:
 1. Parses Bash command from stdin JSON
 2. Subagent blocking: If autonomous mode active AND state has coordinator: false,
    blocks gh workflow run commands
-3. Production gate: If command targets environment=production:
+3. Concurrent deploy prevention: If there's already a running/queued workflow,
+   blocks new gh workflow run commands to prevent race conditions
+4. Production gate: If command targets environment=production:
    - Checks if production deployment was explicitly allowed via allowedPrompts
    - If allowed → permits the command
    - If not allowed → blocks with safety message
@@ -23,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -39,10 +42,17 @@ from _common import (
 DEPLOY_COMMAND_PATTERNS = [
     r"gh\s+workflow\s+run",
     r"gh\s+run\s+watch",
+    r"git\s+push",  # Push triggers CI/CD in most repos
     r"az\s+webapp\s+deploy",
     r"az\s+containerapp\s+.*\s+--image",
     r"kubectl\s+apply",
     r"kubectl\s+rollout",
+]
+
+# Commands that should trigger concurrent workflow check
+CONCURRENT_CHECK_PATTERNS = [
+    r"gh\s+workflow\s+run",
+    r"git\s+push",  # Push triggers CI, so check before pushing
 ]
 
 # Patterns that indicate production targeting
@@ -102,6 +112,49 @@ def has_production_permission(state: dict) -> bool:
                 return True
 
     return False
+
+
+def check_running_workflows(cwd: str) -> list[dict]:
+    """Check for running or queued GitHub workflows.
+
+    Returns list of running/queued workflow runs, or empty list if none or error.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "run", "list", "--status", "in_progress", "--json", "databaseId,name,status,conclusion"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            in_progress = json.loads(result.stdout)
+        else:
+            in_progress = []
+
+        # Also check queued
+        result = subprocess.run(
+            ["gh", "run", "list", "--status", "queued", "--json", "databaseId,name,status,conclusion"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            queued = json.loads(result.stdout)
+        else:
+            queued = []
+
+        all_running = in_progress + queued
+        if all_running:
+            log_debug(f"Found {len(all_running)} running/queued workflows: {[w.get('name') for w in all_running]}")
+        return all_running
+    except subprocess.TimeoutExpired:
+        log_debug("Timeout checking for running workflows")
+        return []
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        log_debug(f"Error checking running workflows: {e}")
+        return []
 
 
 def block_with_message(message: str, reason: str) -> None:
@@ -164,7 +217,47 @@ def main():
             reason="Subagent attempted deployment (coordinator: false)",
         )
 
-    # Rule 2: Production deploys require explicit permission
+    # Rule 2: Block concurrent deploys (check for gh workflow run AND git push)
+    # Git push triggers CI/CD in most repos, so we must check before pushing
+    should_check_concurrent = any(
+        re.search(pattern, command, re.IGNORECASE)
+        for pattern in CONCURRENT_CHECK_PATTERNS
+    )
+    if should_check_concurrent:
+        running_workflows = check_running_workflows(cwd)
+        if running_workflows:
+            workflow_names = [w.get("name", "unknown") for w in running_workflows[:5]]
+            workflow_ids = [str(w.get("databaseId", "?")) for w in running_workflows[:5]]
+            log_debug(f"Blocking concurrent deploy: {len(running_workflows)} workflows already running")
+
+            # Different message for git push vs gh workflow run
+            is_git_push = re.search(r"git\s+push", command, re.IGNORECASE)
+            if is_git_push:
+                action_msg = (
+                    "You're trying to push while CI/CD workflows are still running.\n"
+                    "This would trigger additional workflows and cause deployment race conditions.\n\n"
+                    "Wait for the current workflow(s) to complete first:\n"
+                    "  gh run watch --exit-status " + str(running_workflows[0].get("databaseId", ""))
+                )
+            else:
+                action_msg = (
+                    "Wait for the current workflow(s) to complete before triggering a new deploy.\n"
+                    "Use: gh run watch --exit-status <run-id>"
+                )
+
+            block_with_message(
+                message=(
+                    "⛔ CONCURRENT DEPLOY BLOCKED\n\n"
+                    f"There are already {len(running_workflows)} workflow(s) running or queued:\n"
+                    + "\n".join(f"  - {name} (ID: {wid})" for name, wid in zip(workflow_names, workflow_ids))
+                    + "\n\n"
+                    + action_msg
+                    + "\n\nThis prevents deployment race conditions where one deploy overwrites another."
+                ),
+                reason=f"Concurrent deploy blocked: {len(running_workflows)} workflows already running",
+            )
+
+    # Rule 3: Production deploys require explicit permission
     if is_production_target(command):
         if not has_production_permission(state):
             log_debug("Blocking production deploy without explicit permission")
