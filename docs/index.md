@@ -15,7 +15,7 @@
 ```
 /forge add a logout button to the navbar
 ```
-**Lite Heavy planning** (2 parallel Opus agents: First Principles + AGI-Pilled, read from `/heavy`) → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
+**Lite Heavy planning** (4 parallel Opus agents: 2 required [First Principles + AGI-Pilled] + 2 dynamic [task-specific], read from `/heavy`) → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
 
 ### `/repair` — Unified Debugging Router
 **Use when**: Something is broken (auto-detects web vs mobile).

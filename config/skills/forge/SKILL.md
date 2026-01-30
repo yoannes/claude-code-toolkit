@@ -150,9 +150,10 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 │  ╔═══════════════════════════════════════════════════════════╗  │
 │  ║  PHASE 0.5: LITE HEAVY PLANNING (MANDATORY)               ║  │
 │  ║     └─► EnterPlanMode                                     ║  │
-│  ║     └─► Launch 2 parallel Opus agents (from /heavy):      ║  │
+│  ║     └─► Launch 4 parallel Opus agents:                    ║  │
 │  ║         ├─► First Principles: "What can be deleted?"      ║  │
-│  ║         └─► AGI-Pilled: "What would god-tier AI do?"      ║  │
+│  ║         ├─► AGI-Pilled: "What would god-tier AI do?"      ║  │
+│  ║         └─► 2 Dynamic: Generated based on the task        ║  │
 │  ║     └─► Synthesize tradeoffs + write plan                 ║  │
 │  ║     └─► ExitPlanMode                                      ║  │
 │  ╚═══════════════════════════════════════════════════════════╝  │
@@ -233,11 +234,11 @@ EOF
 
 ## Phase 0.5: Lite Heavy Planning (MANDATORY)
 
-**This phase is REQUIRED before making any changes. It combines codebase exploration with 2-agent analysis for optimal planning.**
+**This phase is REQUIRED before making any changes. It combines codebase exploration with 4-agent analysis for optimal planning.**
 
 ### Overview
 
-Lite Heavy is a streamlined version of `/heavy` that provides multi-perspective analysis in a single round. It uses `/heavy`'s **First Principles** and **AGI-Pilled** agents (the 2 required agents from heavy) to ensure you don't over-engineer or under-simplify.
+Lite Heavy is a streamlined version of `/heavy` that provides multi-perspective analysis in a single round. It uses **4 agents**: `/heavy`'s **First Principles** and **AGI-Pilled** (2 required, hook-enforced) plus **2 dynamic agents** generated based on the specific task. This ensures you don't over-engineer, under-simplify, AND catches task-specific blind spots.
 
 ### Workflow
 
@@ -250,19 +251,29 @@ Lite Heavy is a streamlined version of `/heavy` that provides multi-perspective 
    - Relevant code patterns for the task
    - Existing tests and validation
 
-3. **Read `/heavy` agent prompts**:
+3. **Read `/heavy` agent prompts and generate dynamic perspectives**:
 
    **CRITICAL**: Read `~/.claude/skills/heavy/SKILL.md` to get the exact prompts for:
    - **REQUIRED AGENT 1: First Principles** (Elon Musk approach)
    - **REQUIRED AGENT 2: AGI-Pilled** (maximally capable AI assumption)
+   - **DYNAMIC AGENT TEMPLATE** (lines 346-391 in heavy/SKILL.md)
 
-   Do NOT use custom prompts. Use heavy's exact prompts to maintain consistency.
+   **Generate 2 dynamic perspectives** by asking:
+   > "For THIS task, who would argue about it at a company meeting? Pick 2 perspectives that catch what First Principles and AGI-Pilled might miss."
 
-4. **Launch 2 parallel Opus agents in a SINGLE message**:
+   | Task Type | Example Dynamic Agent 1 | Example Dynamic Agent 2 |
+   |-----------|------------------------|------------------------|
+   | Auth feature | Security Engineer | API Consumer |
+   | UI component | UX Designer | Accessibility Expert |
+   | DB migration | DBA | Application Developer |
+   | API design | Frontend Consumer | External Partner |
+
+4. **Launch 4 parallel Opus agents in a SINGLE message**:
 
    Using the prompts read from heavy/SKILL.md:
 
    ```
+   // 2 REQUIRED AGENTS (hook-enforced)
    Task(
      subagent_type="general-purpose",
      description="First Principles Analysis",
@@ -276,16 +287,33 @@ Lite Heavy is a streamlined version of `/heavy` that provides multi-perspective 
      model="opus",
      prompt="[PASTE HEAVY'S AGI-PILLED PROMPT with TASK and CODEBASE CONTEXT filled in]"
    )
+
+   // 2 DYNAMIC AGENTS (task-specific)
+   Task(
+     subagent_type="general-purpose",
+     description="[DYNAMIC PERSPECTIVE 1] perspective",
+     model="opus",
+     prompt="[PASTE HEAVY'S DYNAMIC AGENT TEMPLATE with ROLE and TASK filled in]"
+   )
+
+   Task(
+     subagent_type="general-purpose",
+     description="[DYNAMIC PERSPECTIVE 2] perspective",
+     model="opus",
+     prompt="[PASTE HEAVY'S DYNAMIC AGENT TEMPLATE with ROLE and TASK filled in]"
+   )
    ```
 
 5. **Synthesize the agents' responses**:
 
-After both agents return, synthesize their insights:
+After all 4 agents return, synthesize their insights:
 
 ```
 TRADEOFF: [topic]
 - First Principles: Delete X because [reason]
 - AGI-Pilled: Expand Y because [capability argument]
+- [Dynamic 1]: Consider Z because [domain expertise]
+- [Dynamic 2]: Watch out for W because [specific risk]
 - Resolution: [chosen approach with rationale]
 ```
 
@@ -297,23 +325,30 @@ TRADEOFF: [topic]
 
 7. **Call `ExitPlanMode`**
 
-### Why These 2 Agents?
+### Why 4 Agents?
 
-Lite Heavy uses `/heavy`'s two **required** agents because they represent complementary forces:
+Lite Heavy uses **4 agents** to cover both universal tensions and task-specific blind spots:
 
-| Agent | Force | Key Question |
-|-------|-------|--------------|
-| **First Principles** | Simplification | "What can be deleted? What's over-engineered?" |
-| **AGI-Pilled** | Capability | "What would god-tier AI implementation look like?" |
+| Agent Type | Force | Key Question | Enforcement |
+|------------|-------|--------------|-------------|
+| **First Principles** | Simplification | "What can be deleted?" | Hook-enforced |
+| **AGI-Pilled** | Capability | "What would god-tier AI do?" | Hook-enforced |
+| **Dynamic 1** | Domain expertise | "What does [expert] see?" | Documentation |
+| **Dynamic 2** | Adversarial review | "What could go wrong?" | Documentation |
 
-| Without Lite Heavy | With Lite Heavy |
-|-------------------|-----------------|
-| Over-engineering | First Principles asks "delete this?" |
-| Under-ambition | AGI-Pilled asks "why constrain the model?" |
-| Scope creep | First Principles enforces simplicity |
-| Conservative design | AGI-Pilled pushes for intelligence-maximizing |
+| Problem | Which Agent Catches It |
+|---------|----------------------|
+| Over-engineering | First Principles |
+| Under-ambition | AGI-Pilled |
+| Domain-specific pitfalls | Dynamic (domain expert) |
+| Implementation flaws | Dynamic (adversarial) |
 
-**Why only 2 agents?** More agents add latency without proportional value for implementation planning. `/heavy` uses 5+ agents for strategic questions; `/forge` uses the 2 required agents for execution planning.
+**Why 4 agents instead of 2?**
+- 2 agents = 1 pairwise tension (simplify vs expand)
+- 4 agents = 6 pairwise tensions (each perspective challenges 3 others)
+- Planning tokens << execution tokens — better planning = fewer fix-verify iterations
+
+**Hook enforcement**: Only the 2 required agents are hook-enforced. Dynamic agents are guided by documentation — the hooks enforce minimums, not maximums.
 
 **Why reference heavy instead of duplicating?** Single source of truth. When heavy's prompts improve, forge automatically benefits.
 
@@ -510,7 +545,7 @@ rm -f ~/.claude/forge-state.json .claude/forge-state.json
 | Aspect | /forge | /appfix |
 |--------|--------|---------|
 | Purpose | Any task | Debugging failures |
-| Lite Heavy planning | Yes (2 agents) | No |
+| Lite Heavy planning | Yes (4 agents) | No |
 | docs_read_at_start | Not required | Required |
 | Health check phase | No | Yes |
 | Log collection phase | No | Yes |
