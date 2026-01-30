@@ -231,6 +231,9 @@ def _is_cwd_under_origin(cwd: str, user_state: dict, session_id: str = "") -> bo
     trust the session regardless of directory. This allows a session to work
     across directories (e.g., navigating to a test directory during appfix).
 
+    MULTI-SESSION SUPPORT: User-level state may have a "sessions" dict that maps
+    session_id to session info. If session_id is found in sessions, trust it.
+
     Args:
         cwd: Current working directory path
         user_state: Parsed user-level state file dict
@@ -239,8 +242,19 @@ def _is_cwd_under_origin(cwd: str, user_state: dict, session_id: str = "") -> bo
     Returns:
         True if cwd is under origin_project (or origin_project not set), False otherwise
     """
-    # Trust matching session - same session can work anywhere
+    # MULTI-SESSION: Check if session_id exists in sessions dict
+    # This is the new format that supports multiple parallel sessions
+    sessions = user_state.get("sessions", {})
+    if session_id and session_id in sessions:
+        session_info = sessions[session_id]
+        # Check TTL for this specific session
+        # If session is found but expired, return False immediately
+        # (don't fall through to legacy checks)
+        return not is_state_expired(session_info)
+
+    # LEGACY: Trust matching session - same session can work anywhere
     # This enables cross-directory workflows (e.g., appfix navigating to test dirs)
+    # Only applies if session_id was NOT found in the new sessions dict
     if session_id and user_state.get("session_id") == session_id:
         return True
 
@@ -678,12 +692,23 @@ def reset_state_for_next_task(cwd: str) -> bool:
                 )
                 state_path.write_text(json.dumps(state, indent=2))
 
-                # Also update user-level state timestamp
+                # Also update user-level state timestamp (both legacy and sessions dict)
+                session_id = state.get("session_id", "")
                 user_state_path = Path.home() / ".claude" / filename
                 if user_state_path.exists():
                     try:
                         user_state = json.loads(user_state_path.read_text())
+                        # Update legacy root-level fields
                         user_state["last_activity_at"] = state["last_activity_at"]
+                        user_state["plan_mode_completed"] = False
+
+                        # Update session in sessions dict (multi-session support)
+                        if session_id and "sessions" in user_state:
+                            sessions = user_state.get("sessions", {})
+                            if session_id in sessions:
+                                sessions[session_id]["last_activity_at"] = state["last_activity_at"]
+                                sessions[session_id]["plan_mode_completed"] = False
+
                         user_state_path.write_text(json.dumps(user_state, indent=2))
                     except (json.JSONDecodeError, IOError):
                         pass
@@ -691,6 +716,64 @@ def reset_state_for_next_task(cwd: str) -> bool:
                 return True
             except (json.JSONDecodeError, IOError):
                 return False
+    return False
+
+
+def _cleanup_user_level_sessions(state_path: Path) -> bool:
+    """Clean up expired sessions from user-level state file.
+
+    MULTI-SESSION SUPPORT: Instead of deleting the whole file, remove
+    individual expired sessions from the sessions dict.
+
+    Args:
+        state_path: Path to the user-level state file
+
+    Returns:
+        True if file was deleted (all sessions expired), False otherwise
+    """
+    try:
+        state = json.loads(state_path.read_text())
+    except (json.JSONDecodeError, IOError):
+        # Corrupt file - delete it
+        try:
+            state_path.unlink()
+            return True
+        except (IOError, OSError):
+            return False
+
+    # Handle multi-session format
+    sessions = state.get("sessions", {})
+    if sessions:
+        # Remove expired sessions
+        valid_sessions = {}
+        for session_id, session_info in sessions.items():
+            if not is_state_expired(session_info):
+                valid_sessions[session_id] = session_info
+
+        if not valid_sessions:
+            # All sessions expired - delete the file
+            try:
+                state_path.unlink()
+                return True
+            except (IOError, OSError):
+                return False
+        elif len(valid_sessions) < len(sessions):
+            # Some sessions expired - update the file
+            state["sessions"] = valid_sessions
+            try:
+                state_path.write_text(json.dumps(state, indent=2))
+            except (IOError, OSError):
+                pass
+        return False
+
+    # Legacy format (no sessions dict) - check root-level TTL
+    if is_state_expired(state):
+        try:
+            state_path.unlink()
+            return True
+        except (IOError, OSError):
+            return False
+
     return False
 
 
@@ -705,6 +788,10 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
 
     Cleans both project-level and user-level state files.
 
+    MULTI-SESSION SUPPORT: User-level state files have a "sessions" dict
+    that maps session_id to session info. Expired sessions are removed
+    from the dict rather than deleting the whole file.
+
     Args:
         cwd: Working directory to start walk-up from
         current_session_id: Current session's ID (empty = clean only expired)
@@ -714,21 +801,6 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
     """
     deleted = []
     state_files = ["appfix-state.json", "godo-state.json"]
-
-    def _should_clean_user_level(state_path: Path) -> bool:
-        """Check if a user-level state file should be cleaned up.
-
-        User-level state is ONLY cleaned based on TTL expiration.
-        We do NOT clean based on session_id mismatch because user-level state
-        is meant to persist across sessions for cross-directory autonomous mode.
-        """
-        try:
-            state = json.loads(state_path.read_text())
-        except (json.JSONDecodeError, IOError):
-            return True  # Corrupt file = clean up
-
-        # Only clean if expired (TTL-based)
-        return is_state_expired(state)
 
     def _should_clean_project_level(state_path: Path) -> bool:
         """Check if a project-level state file should be cleaned up.
@@ -752,16 +824,13 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
 
         return False
 
-    # 1. Clean user-level state (TTL-based only, preserves cross-session state)
+    # 1. Clean user-level state (multi-session aware)
     user_claude_dir = Path.home() / ".claude"
     for filename in state_files:
         user_state = user_claude_dir / filename
-        if user_state.exists() and _should_clean_user_level(user_state):
-            try:
-                user_state.unlink()
+        if user_state.exists():
+            if _cleanup_user_level_sessions(user_state):
                 deleted.append(str(user_state))
-            except (IOError, OSError):
-                pass
 
     # 2. Walk UP directory tree and clean project-level state files
     if cwd:

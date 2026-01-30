@@ -105,14 +105,32 @@ def main():
     # This enables cross-directory workflows where the session moves to a new
     # directory that has no project-level state file. The user-level state
     # becomes the "session passport" that carries workflow state across directories.
+    #
+    # MULTI-SESSION SUPPORT: Update BOTH the legacy root-level fields AND the
+    # session entry in the sessions dict. This ensures backward compatibility
+    # while supporting multiple parallel sessions.
     user_state_path = Path.home() / ".claude" / state_filename
     if user_state_path.exists():
         try:
             user_state = json.loads(user_state_path.read_text())
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            # Update legacy root-level fields (backward compatibility)
             user_state["plan_mode_completed"] = True
-            user_state["last_activity_at"] = datetime.now(timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            user_state["last_activity_at"] = now
+
+            # Update session entry in sessions dict (multi-session support)
+            if session_id and "sessions" in user_state:
+                sessions = user_state.get("sessions", {})
+                if session_id in sessions:
+                    sessions[session_id]["plan_mode_completed"] = True
+                    sessions[session_id]["last_activity_at"] = now
+                    log_debug(
+                        f"Updated session {session_id} in sessions dict",
+                        hook_name="plan-mode-tracker",
+                        parsed_data={"session_id": session_id},
+                    )
+
             user_state_path.write_text(json.dumps(user_state, indent=2))
             log_debug(
                 "Mirrored plan_mode_completed to user-level state",

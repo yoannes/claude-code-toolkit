@@ -172,11 +172,34 @@ def _detect_worktree_context(cwd: str) -> tuple[bool, str | None, str | None]:
         return True, None, None  # Can't detect, assume coordinator
 
 
+def _cleanup_expired_sessions(sessions: dict, ttl_hours: int = 8) -> dict:
+    """Remove expired sessions from the sessions dict.
+
+    Args:
+        sessions: Dict mapping session_id to session info
+        ttl_hours: Hours before a session expires (default: 8)
+
+    Returns:
+        Cleaned sessions dict with expired entries removed
+    """
+    from _common import is_state_expired
+
+    cleaned = {}
+    for session_id, session_info in sessions.items():
+        if not is_state_expired(session_info, ttl_hours):
+            cleaned[session_id] = session_info
+    return cleaned
+
+
 def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile: bool = False) -> bool:
     """Create the state file for the given skill.
 
     Creates both project-level (.claude/) and user-level (~/.claude/) state files.
     Includes session_id and last_activity_at for sticky session support.
+
+    MULTI-SESSION SUPPORT: User-level state uses a "sessions" dict that maps
+    session_id to session info. This allows multiple parallel Claude sessions
+    to coexist without overwriting each other's state.
 
     Detects if running in a worktree (subagent) vs main repo (coordinator):
     - Coordinator: Can deploy, runs in main repo
@@ -211,17 +234,6 @@ def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile
     if skill_name == "godo":
         project_state["task"] = "Detected from user prompt"
 
-    # User-level state (for cross-repo detection and cross-directory session continuity)
-    # Includes plan_mode_completed so sessions can move to new directories
-    # and still track whether plan mode was completed
-    user_state = {
-        "started_at": now,
-        "last_activity_at": now,
-        "session_id": session_id,
-        "origin_project": cwd,
-        "plan_mode_completed": False,  # Mirrored from project-level by plan-mode-tracker
-    }
-
     success = True
 
     # Create project-level state file
@@ -234,11 +246,47 @@ def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile
         print(f"Warning: Failed to create project state file: {e}", file=sys.stderr)
         success = False
 
-    # Create user-level state file
+    # Create/update user-level state file with MULTI-SESSION support
+    # Instead of overwriting, we ADD this session to the sessions dict
     try:
         user_claude_dir = Path.home() / ".claude"
         user_claude_dir.mkdir(parents=True, exist_ok=True)
         user_state_path = user_claude_dir / state_filename
+
+        # Load existing state or create new
+        existing_state = {}
+        if user_state_path.exists():
+            try:
+                existing_state = json.loads(user_state_path.read_text())
+            except json.JSONDecodeError:
+                existing_state = {}
+
+        # Get or create sessions dict
+        sessions = existing_state.get("sessions", {})
+
+        # Clean up expired sessions (>8 hours old)
+        sessions = _cleanup_expired_sessions(sessions)
+
+        # Add this session to the sessions dict
+        sessions[session_id] = {
+            "origin_project": cwd,
+            "started_at": now,
+            "last_activity_at": now,
+            "plan_mode_completed": False,
+        }
+
+        # Build user-level state with multi-session format
+        user_state = {
+            "sessions": sessions,
+            # Legacy fields for backward compatibility with old code
+            # that reads session_id directly from root level
+            "started_at": now,
+            "last_activity_at": now,
+            "session_id": session_id,
+            "origin_project": cwd,
+            "plan_mode_completed": False,
+        }
+
         user_state_path.write_text(json.dumps(user_state, indent=2))
     except (OSError, IOError) as e:
         print(f"Warning: Failed to create user state file: {e}", file=sys.stderr)
