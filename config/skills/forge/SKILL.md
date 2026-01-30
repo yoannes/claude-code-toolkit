@@ -73,9 +73,11 @@ TEST_PASSWORD=your-test-password
 - Copy from `.env.example` if available
 - Claude will ask once if credentials are missing, then expects them in `.env` for future use
 
-## Browser Verification is MANDATORY
+## Verification is MANDATORY (Platform-Aware)
 
-**ALL forge sessions require browser verification. No exceptions.**
+**ALL forge sessions require E2E verification. The type depends on your platform:**
+
+### Web Projects → Browser Testing (Surf CLI)
 
 | Task Type | Browser Verification Purpose |
 |-----------|------------------------------|
@@ -85,7 +87,24 @@ TEST_PASSWORD=your-test-password
 | Config changes | Verify behavior changed |
 | API changes | Verify frontend integration works |
 
-**The purpose of browser verification is to confirm the application works after your changes.**
+### Mobile Projects → Maestro E2E Testing (MCP)
+
+**If the project contains `app.json`, `eas.json`, or `ios/`/`android/` directories, it's a mobile project and requires Maestro testing.**
+
+| Task Type | Maestro Verification Purpose |
+|-----------|------------------------------|
+| Feature implementation | Verify feature works on simulator |
+| Bug fix | Verify bug is fixed via E2E tests |
+| Refactoring | Verify app still works (J2 + J3 journeys) |
+| Config changes | Verify behavior changed |
+| API changes | Verify mobile app integration works |
+
+**Mobile projects MUST use Maestro MCP tools:**
+- `mcp__maestro__run_flow()` - Run test journeys
+- `mcp__maestro__hierarchy()` - Inspect element tree
+- `mcp__maestro__screenshot()` - Capture screenshots
+
+**The purpose of verification is to confirm the application works after your changes.**
 
 ## Triggers
 

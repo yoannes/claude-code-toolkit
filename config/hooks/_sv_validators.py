@@ -23,6 +23,7 @@ from _common import (
     is_repair_active,
     is_appfix_active,
     is_mobileappfix_active,
+    is_forge_active,
     is_autonomous_mode_active,
     VERSION_DEPENDENT_FIELDS,
 )
@@ -677,10 +678,10 @@ def validate_web_testing(
 def validate_mobile_testing(
     checkpoint: dict, has_app_code: bool, cwd: str
 ) -> tuple[list[str], bool]:
-    """Check mobile testing requirements for mobileappfix mode.
+    """Check mobile testing requirements for mobile app projects.
 
-    In mobileappfix mode, Maestro E2E verification is MANDATORY.
-    This validates:
+    In mobile mode (mobileappfix OR forge on mobile project), Maestro E2E
+    verification is MANDATORY. This validates:
     1. maestro_tests_passed is true with current version
     2. Maestro smoke artifacts exist and passed
     3. MCP tools were used (maestro_mcp_used)
@@ -690,14 +691,20 @@ def validate_mobile_testing(
     Maestro tests. This prevents false-positive mobile detection from
     blocking non-mobile projects.
 
+    NOTE: This function is now called for:
+    - /mobileappfix mode (explicit mobile debugging)
+    - /forge mode when is_mobile_project() returns True
+
+    The caller (validate_checkpoint) handles the mode detection logic.
+
     Returns (failures, checkpoint_modified)
     """
     failures = []
     report = checkpoint.get("self_report", {})
     checkpoint_modified = False
 
-    if not is_mobileappfix_active(cwd):
-        return failures, checkpoint_modified
+    # Note: Mode detection is now done by the caller (validate_checkpoint)
+    # This function focuses purely on mobile testing validation
 
     # Safety net: Don't require Maestro tests if project isn't actually mobile
     # This prevents false-positive mobile detection from blocking non-mobile projects
@@ -799,11 +806,22 @@ def validate_checkpoint(
     has_frontend = has_frontend_changes(modified_files)
     failures.extend(validate_code_requirements(report, has_app_code, has_frontend))
 
-    # 4. Web testing requirements (autonomous mode - web apps only)
+    # 4. Determine if this is a mobile or web project
     has_infra = report.get("az_cli_changes_made", False)
-    
-    # Skip web testing for mobile mode - use Maestro instead
-    if not is_mobileappfix_active(cwd):
+
+    # CRITICAL: Detect mobile projects for BOTH /mobileappfix AND /forge modes
+    # This fixes the bug where /forge on a mobile app allowed web_testing_done: true
+    # to bypass mobile testing requirements
+    is_mobile_mode = is_mobileappfix_active(cwd)
+    is_mobile = is_mobile_project(cwd)
+
+    # For forge mode: if project is mobile, require mobile testing
+    if is_forge_active(cwd) and is_mobile and not is_mobile_mode:
+        # Forge on mobile project - treat as mobile mode for testing requirements
+        is_mobile_mode = True
+
+    # Web testing requirements (web apps only)
+    if not is_mobile_mode:
         web_failures, web_modified = validate_web_testing(
             checkpoint, has_app_code, has_infra, cwd
         )
@@ -811,8 +829,8 @@ def validate_checkpoint(
         if web_modified:
             checkpoint_modified = True
 
-    # 5. Mobile testing requirements (mobileappfix mode)
-    if is_mobileappfix_active(cwd):
+    # 5. Mobile testing requirements (mobileappfix mode OR forge on mobile project)
+    if is_mobile_mode:
         mobile_failures, mobile_modified = validate_mobile_testing(
             checkpoint, has_app_code, cwd
         )
