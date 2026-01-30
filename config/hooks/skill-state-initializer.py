@@ -44,13 +44,14 @@ DEACTIVATION_PATTERNS = [
     r"(?:^|\s)/repair\s+off\b",  # Primary debugging skill
     r"(?:^|\s)/build\s+off\b",  # Primary task execution skill
     r"(?:^|\s)/burndown\s+off\b",  # Tech debt elimination skill
+    r"(?:^|\s)/episode\s+off\b",  # Video episode generation skill
     r"(?:^|\s)/appfix\s+off\b",  # Internal web debugging
     r"(?:^|\s)/mobileappfix\s+off\b",  # Internal mobile debugging
     r"(?:^|\s)/forge\s+off\b",  # Legacy alias
     r"(?:^|\s)/godo\s+off\b",  # Legacy alias
     r"\bstop autonomous mode\b",
     r"\bdisable auto[- ]?approval\b",
-    r"\bturn off (repair|build|forge|burndown|appfix|mobileappfix|godo)\b",
+    r"\bturn off (repair|build|forge|burndown|episode|appfix|mobileappfix|godo)\b",
 ]
 
 # Trigger patterns for each skill
@@ -104,6 +105,12 @@ SKILL_TRIGGERS = {
         r"\bremove ai slop\b",
         r"\bcodebase cleanup\b",
         r"\btech debt (cleanup|removal|elimination)\b",
+    ],
+    "episode": [  # Video episode generation skill
+        r"(?:^|\s)/episode\b",  # Primary slash command
+        r"\bgenerate (an? )?episode\b",  # Natural language
+        r"\bcreate (an? )?(educational )?video\b",
+        r"\bproduce (an? )?episode\b",
     ],
 }
 

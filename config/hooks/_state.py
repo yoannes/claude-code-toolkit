@@ -229,12 +229,38 @@ def is_burndown_active(cwd: str, session_id: str = "") -> bool:
     return False
 
 
+def is_episode_active(cwd: str, session_id: str = "") -> bool:
+    """Check if episode generation mode is active via state file or env var."""
+    state = load_state_file(cwd, "episode-state.json")
+    if state and not is_state_expired(state):
+        return True
+
+    user_state_path = Path.home() / ".claude" / "episode-state.json"
+    if user_state_path.exists():
+        try:
+            user_state = json.loads(user_state_path.read_text())
+            if not is_state_expired(user_state) and _is_cwd_under_origin(cwd, user_state, session_id):
+                return True
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    if os.environ.get("EPISODE_ACTIVE", "").lower() in ("true", "1", "yes"):
+        return True
+
+    return False
+
+
 def is_autonomous_mode_active(cwd: str, session_id: str = "") -> bool:
-    """Check if any autonomous execution mode is active (build, repair, or burndown).
+    """Check if any autonomous execution mode is active (build, repair, burndown, or episode).
 
     This is the unified check for enabling auto-approval hooks.
     """
-    return is_build_active(cwd, session_id) or is_repair_active(cwd, session_id) or is_burndown_active(cwd, session_id)
+    return (
+        is_build_active(cwd, session_id)
+        or is_repair_active(cwd, session_id)
+        or is_burndown_active(cwd, session_id)
+        or is_episode_active(cwd, session_id)
+    )
 
 
 def get_autonomous_state(cwd: str, session_id: str = "") -> tuple[dict | None, str | None]:
@@ -260,11 +286,16 @@ def get_autonomous_state(cwd: str, session_id: str = "") -> tuple[dict | None, s
     if burndown_state and not is_state_expired(burndown_state):
         return burndown_state, "burndown"
 
+    episode_state = load_state_file(cwd, "episode-state.json")
+    if episode_state and not is_state_expired(episode_state):
+        return episode_state, "episode"
+
     for filename, state_type in [
         ("build-state.json", "build"),
         ("forge-state.json", "build"),
         ("appfix-state.json", "repair"),
         ("burndown-state.json", "burndown"),
+        ("episode-state.json", "episode"),
     ]:
         user_path = Path.home() / ".claude" / filename
         if user_path.exists():
@@ -291,7 +322,7 @@ def cleanup_autonomous_state(cwd: str) -> list[str]:
     2. ALL .claude/ directories walking UP from cwd
     """
     deleted = []
-    state_files = ["appfix-state.json", "build-state.json", "forge-state.json", "burndown-state.json"]
+    state_files = ["appfix-state.json", "build-state.json", "forge-state.json", "burndown-state.json", "episode-state.json"]
 
     # 1. Clean user-level state
     user_claude_dir = Path.home() / ".claude"
@@ -381,7 +412,7 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
     Called at SessionStart to clean up stale state from previous sessions.
     """
     deleted = []
-    state_files = ["appfix-state.json", "build-state.json", "forge-state.json", "burndown-state.json"]
+    state_files = ["appfix-state.json", "build-state.json", "forge-state.json", "burndown-state.json", "episode-state.json"]
 
     def _should_clean(state_path: Path) -> bool:
         try:
@@ -458,7 +489,7 @@ def reset_state_for_next_task(cwd: str) -> bool:
     Increments iteration, resets plan_mode_completed, updates last_activity_at,
     clears per-task fields. Does NOT delete the state file (sticky session behavior).
     """
-    for filename in ("build-state.json", "forge-state.json", "appfix-state.json", "burndown-state.json"):
+    for filename in ("build-state.json", "forge-state.json", "appfix-state.json", "burndown-state.json", "episode-state.json"):
         state_path = _find_state_file_path(cwd, filename)
         if state_path:
             try:
