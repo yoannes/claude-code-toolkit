@@ -41,12 +41,13 @@ from _common import (
 DEACTIVATION_PATTERNS = [
     r"(?:^|\s)/repair\s+off\b",  # Primary debugging skill
     r"(?:^|\s)/forge\s+off\b",  # Primary task execution skill
+    r"(?:^|\s)/burndown\s+off\b",  # Tech debt elimination skill
     r"(?:^|\s)/appfix\s+off\b",  # Internal web debugging
     r"(?:^|\s)/mobileappfix\s+off\b",  # Internal mobile debugging
     r"(?:^|\s)/godo\s+off\b",  # Legacy alias
     r"\bstop autonomous mode\b",
     r"\bdisable auto[- ]?approval\b",
-    r"\bturn off (repair|forge|appfix|mobileappfix|godo)\b",
+    r"\bturn off (repair|forge|burndown|appfix|mobileappfix|godo)\b",
 ]
 
 # Trigger patterns for each skill
@@ -89,6 +90,16 @@ SKILL_TRIGGERS = {
         r"\bjust do it\b",
         r"\bexecute this\b",
         r"\bmake it happen\b",
+    ],
+    "burndown": [  # Tech debt elimination skill
+        r"(?:^|\s)/burndown\b",  # Primary slash command
+        r"\bburn down debt\b",  # Natural language
+        r"\bburn down tech debt\b",
+        r"\bclean up the codebase\b",
+        r"\bfix (the )?(code )?slop\b",
+        r"\bremove ai slop\b",
+        r"\bcodebase cleanup\b",
+        r"\btech debt (cleanup|removal|elimination)\b",
     ],
 }
 

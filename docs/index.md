@@ -8,14 +8,14 @@
 
 ---
 
-## The Three Core Skills
+## The Four Core Skills
 
 ### `/forge` — Universal Task Execution
 **Use when**: You have a task and want autonomous execution.
 ```
 /forge add a logout button to the navbar
 ```
-**Lite Heavy planning** (4 parallel Opus agents: 2 required [First Principles + AGI-Pilled] + 2 dynamic [task-specific], read from `/heavy`) → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
+**Lite Heavy planning** (2 parallel Opus agents: First Principles + AGI-Pilled) → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
 
 ### `/repair` — Unified Debugging Router
 **Use when**: Something is broken (auto-detects web vs mobile).
@@ -23,6 +23,13 @@
 /repair
 ```
 Detects platform → routes to `/appfix` (web) or `/mobileappfix` (mobile) → **loops until healthy**.
+
+### `/burndown` — Tech Debt Elimination
+**Use when**: Codebase has accumulated slop or architecture issues.
+```
+/burndown src/components/
+```
+Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents scan for issues → prioritizes by severity → **fixes iteratively** → re-scans to verify → **cannot stop until critical issues fixed**.
 
 ### `/heavy` — Multi-Perspective Analysis
 **Use when**: Complex question needing broad perspectives.
@@ -33,17 +40,18 @@ Detects platform → routes to `/appfix` (web) or `/mobileappfix` (mobile) → *
 
 ---
 
-## All Slash Commands (13 commands + 3 core skills)
+## All Slash Commands (13 commands + 4 core skills)
 
 | Command | Purpose |
 |---------|---------|
 | `/forge` | Autonomous task execution (with Lite Heavy planning) |
 | `/repair` | Unified debugging router (web → appfix, mobile → mobileappfix) |
+| `/burndown` | Autonomous tech debt elimination (combines /deslop + /qa) |
 | `/heavy` | Multi-agent analysis |
 | `/harness-test` | Test harness changes (hooks/skills) in sandbox |
 | `/appfix` | Web app debugging |
-| `/qa` | Architecture audit |
-| `/deslop` | AI slop detection |
+| `/qa` | Architecture audit (detection only - use /burndown to fix) |
+| `/deslop` | AI slop detection (detection only - use /burndown to fix) |
 | `/docupdate` | Documentation gaps |
 | `/config-audit` | Environment variable analysis |
 | `/webtest` | Browser testing |
@@ -54,12 +62,13 @@ Detects platform → routes to `/appfix` (web) or `/mobileappfix` (mobile) → *
 | `/designimprove` | UI improvement |
 | `/uximprove` | UX improvement |
 
-## All Skills (19 active, 2 deprecated)
+## All Skills (20 active, 2 deprecated)
 
 | Skill | Triggers |
 |-------|----------|
 | `forge` | /forge, /godo (legacy), "go do", "just do it", "execute this" |
 | `repair` | /repair, /appfix, /mobileappfix, "fix the app", "debug production" |
+| `burndown` | /burndown, "burn down debt", "clean up codebase", "fix the slop" |
 | `appfix` | (Internal: web debugging - prefer /repair) |
 | `heavy` | /heavy, "heavy analysis", "multiple perspectives", "debate this" |
 | `mobileappfix` | (Internal: mobile debugging - prefer /repair) |
