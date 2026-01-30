@@ -112,6 +112,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/lite-heavy-enforcer.py\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -147,10 +157,25 @@
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/checkpoint-invalidator.py\"",
             "timeout": 5
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$HOME/.claude/hooks/checkpoint-write-validator.py\"",
+            "command": "python3 \"$HOME/.claude/hooks/lite-heavy-tracker.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/lite-heavy-tracker.py\"",
             "timeout": 5
           }
         ]

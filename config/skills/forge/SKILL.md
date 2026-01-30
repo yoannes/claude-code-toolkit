@@ -1,9 +1,9 @@
 ---
-name: godo
-description: Task-agnostic autonomous execution. Identifies any task and executes it through a complete fix-verify loop until done. Use when asked to "go do", "just do it", "execute this", or "/godo".
+name: forge
+description: Task-agnostic autonomous execution. Identifies any task and executes it through a complete fix-verify loop until done. Use when asked to "go do", "just do it", "execute this", "/forge", or "/godo".
 ---
 
-# Autonomous Task Execution (/godo)
+# Autonomous Task Execution (/forge)
 
 Task-agnostic autonomous execution skill that iterates until the task is complete and verified.
 
@@ -75,7 +75,7 @@ TEST_PASSWORD=your-test-password
 
 ## Browser Verification is MANDATORY
 
-**ALL godo sessions require browser verification. No exceptions.**
+**ALL forge sessions require browser verification. No exceptions.**
 
 | Task Type | Browser Verification Purpose |
 |-----------|------------------------------|
@@ -89,7 +89,8 @@ TEST_PASSWORD=your-test-password
 
 ## Triggers
 
-- `/godo`
+- `/forge` (primary)
+- `/godo` (legacy alias)
 - "go do"
 - "just do it"
 - "execute this"
@@ -143,14 +144,16 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 0: ACTIVATION                                            │
-│     └─► Create .claude/godo-state.json (enables auto-approval)  │
+│     └─► Create .claude/forge-state.json (enables auto-approval) │
 │     └─► Identify task from user prompt                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  ╔═══════════════════════════════════════════════════════════╗  │
-│  ║  PHASE 0.5: CODEBASE CONTEXT (MANDATORY)                  ║  │
+│  ║  PHASE 0.5: LITE HEAVY PLANNING (MANDATORY)               ║  │
 │  ║     └─► EnterPlanMode                                     ║  │
-│  ║     └─► Explore: architecture, recent commits, configs    ║  │
-│  ║     └─► Write understanding + implementation plan         ║  │
+│  ║     └─► Launch 2 parallel Opus agents (from /heavy):      ║  │
+│  ║         ├─► First Principles: "What can be deleted?"      ║  │
+│  ║         └─► AGI-Pilled: "What would god-tier AI do?"      ║  │
+│  ║     └─► Synthesize tradeoffs + write plan                 ║  │
 │  ║     └─► ExitPlanMode                                      ║  │
 │  ╚═══════════════════════════════════════════════════════════╝  │
 ├─────────────────────────────────────────────────────────────────┤
@@ -176,11 +179,11 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 
 ### State File (Automatic)
 
-**The state file is created automatically by the `skill-state-initializer.py` hook when you invoke `/godo`.**
+**The state file is created automatically by the `skill-state-initializer.py` hook when you invoke `/forge` or `/godo`.**
 
-When you type `/godo`, "go do", "just do it", or similar triggers, the UserPromptSubmit hook immediately creates:
-- `.claude/godo-state.json` - Project-level state for iteration tracking
-- `~/.claude/godo-state.json` - User-level state for cross-repo detection
+When you type `/forge`, `/godo`, "go do", "just do it", or similar triggers, the UserPromptSubmit hook immediately creates:
+- `.claude/forge-state.json` - Project-level state for iteration tracking
+- `~/.claude/forge-state.json` - User-level state for cross-repo detection
 
 This happens BEFORE Claude starts processing, ensuring auto-approval hooks are active from the first tool call.
 
@@ -191,7 +194,7 @@ This happens BEFORE Claude starts processing, ensuring auto-approval hooks are a
 
 ```bash
 # Only use this if the automatic hook didn't create the files
-mkdir -p .claude && cat > .claude/godo-state.json << 'EOF'
+mkdir -p .claude && cat > .claude/forge-state.json << 'EOF'
 {
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "task": "user's task description",
@@ -204,7 +207,7 @@ mkdir -p .claude && cat > .claude/godo-state.json << 'EOF'
 }
 EOF
 
-mkdir -p ~/.claude && cat > ~/.claude/godo-state.json << 'EOF'
+mkdir -p ~/.claude && cat > ~/.claude/forge-state.json << 'EOF'
 {
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "origin_project": "$(pwd)"
@@ -217,7 +220,7 @@ EOF
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `started_at` | string | ISO timestamp when godo started |
+| `started_at` | string | ISO timestamp when forge started |
 | `task` | string | Description of the user's task |
 | `iteration` | int | Current fix-verify iteration (starts at 1) |
 | `plan_mode_completed` | bool | True after ExitPlanMode called (Edit/Write blocked if false on iteration 1) |
@@ -228,32 +231,91 @@ EOF
 
 **Hook enforcement**: The `plan-mode-enforcer.py` hook blocks Edit/Write tools until `plan_mode_completed: true` on the first iteration. This ensures you explore the codebase before making changes.
 
-## Phase 0.5: Codebase Context (MANDATORY)
+## Phase 0.5: Lite Heavy Planning (MANDATORY)
 
-**This phase is REQUIRED before making any changes. Understanding the codebase prevents breaking changes and wasted effort.**
+**This phase is REQUIRED before making any changes. It combines codebase exploration with 2-agent analysis for optimal planning.**
+
+### Overview
+
+Lite Heavy is a streamlined version of `/heavy` that provides multi-perspective analysis in a single round. It uses `/heavy`'s **First Principles** and **AGI-Pilled** agents (the 2 required agents from heavy) to ensure you don't over-engineer or under-simplify.
+
+### Workflow
 
 1. **Call `EnterPlanMode`**
 
-2. **Explore the codebase**:
+2. **Explore the codebase first**:
    - Project structure and architecture
    - Recent commits: `git log --oneline -15`
    - Environment and deployment configs
    - Relevant code patterns for the task
    - Existing tests and validation
 
-3. **Write to plan file**:
-   - What you understand about the codebase
-   - How the task fits into existing architecture
-   - Implementation approach with specific files to modify
-   - Potential risks or dependencies
+3. **Read `/heavy` agent prompts**:
 
-4. **Call `ExitPlanMode`**
+   **CRITICAL**: Read `~/.claude/skills/heavy/SKILL.md` to get the exact prompts for:
+   - **REQUIRED AGENT 1: First Principles** (Elon Musk approach)
+   - **REQUIRED AGENT 2: AGI-Pilled** (maximally capable AI assumption)
 
-**Why this matters:** Jumping straight to code without understanding the codebase leads to:
-- Breaking existing functionality
-- Inconsistent patterns
-- Wasted effort on wrong approaches
-- Missing edge cases
+   Do NOT use custom prompts. Use heavy's exact prompts to maintain consistency.
+
+4. **Launch 2 parallel Opus agents in a SINGLE message**:
+
+   Using the prompts read from heavy/SKILL.md:
+
+   ```
+   Task(
+     subagent_type="general-purpose",
+     description="First Principles Analysis",
+     model="opus",
+     prompt="[PASTE HEAVY'S FIRST PRINCIPLES PROMPT with TASK and CODEBASE CONTEXT filled in]"
+   )
+
+   Task(
+     subagent_type="general-purpose",
+     description="AGI-Pilled Analysis",
+     model="opus",
+     prompt="[PASTE HEAVY'S AGI-PILLED PROMPT with TASK and CODEBASE CONTEXT filled in]"
+   )
+   ```
+
+5. **Synthesize the agents' responses**:
+
+After both agents return, synthesize their insights:
+
+```
+TRADEOFF: [topic]
+- First Principles: Delete X because [reason]
+- AGI-Pilled: Expand Y because [capability argument]
+- Resolution: [chosen approach with rationale]
+```
+
+6. **Write to plan file**:
+   - Tradeoffs discovered and resolutions
+   - Final simplified scope (what we WON'T do)
+   - Implementation approach with specific files
+   - Risks and mitigations
+
+7. **Call `ExitPlanMode`**
+
+### Why These 2 Agents?
+
+Lite Heavy uses `/heavy`'s two **required** agents because they represent complementary forces:
+
+| Agent | Force | Key Question |
+|-------|-------|--------------|
+| **First Principles** | Simplification | "What can be deleted? What's over-engineered?" |
+| **AGI-Pilled** | Capability | "What would god-tier AI implementation look like?" |
+
+| Without Lite Heavy | With Lite Heavy |
+|-------------------|-----------------|
+| Over-engineering | First Principles asks "delete this?" |
+| Under-ambition | AGI-Pilled asks "why constrain the model?" |
+| Scope creep | First Principles enforces simplicity |
+| Conservative design | AGI-Pilled pushes for intelligence-maximizing |
+
+**Why only 2 agents?** More agents add latency without proportional value for implementation planning. `/heavy` uses 5+ agents for strategic questions; `/forge` uses the 2 required agents for execution planning.
+
+**Why reference heavy instead of duplicating?** Single source of truth. When heavy's prompts improve, forge automatically benefits.
 
 ## Phase 0.75: Parallel Task Distribution (After Plan Approval)
 
@@ -423,7 +485,7 @@ Update checkpoint and try to stop. If blocked, address the issues and try again.
 
 **Cleanup on completion**: Remove state files when done:
 ```bash
-rm -f ~/.claude/godo-state.json .claude/godo-state.json
+rm -f ~/.claude/forge-state.json .claude/forge-state.json
 ```
 
 ## Exit Conditions
@@ -445,9 +507,10 @@ rm -f ~/.claude/godo-state.json .claude/godo-state.json
 
 ## Comparison with /appfix
 
-| Aspect | /godo | /appfix |
-|--------|-------|---------|
+| Aspect | /forge | /appfix |
+|--------|--------|---------|
 | Purpose | Any task | Debugging failures |
+| Lite Heavy planning | Yes (2 agents) | No |
 | docs_read_at_start | Not required | Required |
 | Health check phase | No | Yes |
 | Log collection phase | No | Yes |
@@ -456,7 +519,7 @@ rm -f ~/.claude/godo-state.json .claude/godo-state.json
 | Browser verification | Required | Required |
 | Completion checkpoint | Same schema | Same schema |
 
-`/godo` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
+`/forge` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
 
 ## Parallel Agent Isolation (Git Worktrees)
 
@@ -560,7 +623,7 @@ COORDINATOR WORKFLOW:
 **How coordination state is detected:**
 - `skill-state-initializer.py` automatically detects worktree context
 - Sets `coordinator: false`, `parallel_mode: true` when in worktree
-- Subagents can check `.claude/appfix-state.json` or `.claude/godo-state.json`
+- Subagents can check `.claude/appfix-state.json` or `.claude/forge-state.json`
 
 ### Garbage Collection for Stale Worktrees
 

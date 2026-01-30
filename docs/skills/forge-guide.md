@@ -1,22 +1,24 @@
-# /godo - Task-Agnostic Autonomous Execution
+# /forge - Task-Agnostic Autonomous Execution
 
-Complete guide to the `/godo` skill for autonomous task execution with completion validation.
+Complete guide to the `/forge` skill for autonomous task execution with Lite Heavy planning and completion validation.
 
 ## Table of Contents
 
 1. [Overview](#overview)
 2. [When to Use](#when-to-use)
-3. [Workflow](#workflow)
-4. [Completion Checkpoint](#completion-checkpoint)
-5. [Comparison with /appfix](#comparison-with-appfix)
-6. [Troubleshooting](#troubleshooting)
+3. [Lite Heavy Planning](#lite-heavy-planning)
+4. [Workflow](#workflow)
+5. [Completion Checkpoint](#completion-checkpoint)
+6. [Comparison with /appfix](#comparison-with-appfix)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-`/godo` is the universal autonomous execution skill. It provides:
+`/forge` is the universal autonomous execution skill. It provides:
 
+- **Lite Heavy Planning** - 2 parallel Opus agents (First Principles + Implementer) before execution
 - **100% Autonomous Operation** - No permission prompts, no confirmation requests
 - **Completion Checkpoint** - Deterministic boolean validation before stopping
 - **Browser Verification** - Mandatory testing in real browser
@@ -26,6 +28,7 @@ Complete guide to the `/godo` skill for autonomous task execution with completio
 
 | Feature | Description |
 |---------|-------------|
+| Lite Heavy planning | 2-agent planning phase to prevent over/under-engineering |
 | Auto-approval hooks | All tool permissions granted automatically |
 | Stop hook validation | Cannot stop until checkpoint booleans pass |
 | Checkpoint invalidation | Stale fields reset when code changes |
@@ -35,7 +38,7 @@ Complete guide to the `/godo` skill for autonomous task execution with completio
 
 ## When to Use
 
-### Use /godo
+### Use /forge
 
 | Scenario | Example |
 |----------|---------|
@@ -45,13 +48,48 @@ Complete guide to the `/godo` skill for autonomous task execution with completio
 | Config changes | "Update the API endpoint URLs" |
 | Any task requiring completion verification | "Deploy the new feature" |
 
-### Use /appfix Instead
+### Use /repair Instead
 
-| Scenario | Why appfix? |
+| Scenario | Why repair? |
 |----------|-------------|
-| Production/staging is down | Adds health check phases |
-| Debugging failures | Adds log collection phases |
-| Diagnosing errors | Requires service topology |
+| Production/staging is down | Routes to /appfix with health check phases |
+| Debugging failures | Routes to /appfix with log collection phases |
+| Mobile app crashes | Routes to /mobileappfix with Maestro tests |
+
+---
+
+## Lite Heavy Planning
+
+Lite Heavy is a streamlined version of `/heavy` that uses `/heavy`'s 2 **required** agents to ensure optimal implementation planning.
+
+### The Two Agents (from /heavy)
+
+| Agent | Role | Key Question |
+|-------|------|--------------|
+| **First Principles** | Simplification | "What can be deleted? What's over-engineered?" |
+| **AGI-Pilled** | Capability | "What would god-tier AI implementation look like?" |
+
+**Important**: Forge reads the agent prompts directly from `~/.claude/skills/heavy/SKILL.md` at runtime. This ensures prompts stay in sync - when heavy improves, forge automatically benefits.
+
+### Why These 2 Agents?
+
+| Without Lite Heavy | With Lite Heavy |
+|-------------------|-----------------|
+| Over-engineering | First Principles asks "delete this?" |
+| Under-ambition | AGI-Pilled asks "why constrain the model?" |
+| Scope creep | First Principles enforces simplicity |
+| Conservative design | AGI-Pilled pushes for intelligence-maximizing |
+
+### Synthesis Output
+
+After both agents return, synthesize their insights:
+
+```
+TRADEOFF: [topic]
+- First Principles: Delete X because [reason]
+- AGI-Pilled: Expand Y because [capability argument]
+- Resolution: [chosen approach with rationale]
+```
 
 ---
 
@@ -60,18 +98,18 @@ Complete guide to the `/godo` skill for autonomous task execution with completio
 ### Phase 0: Activation
 
 ```bash
-# Create state file IMMEDIATELY (enables auto-approval)
-mkdir -p .claude && cat > .claude/godo-state.json << 'EOF'
+# State file is created AUTOMATICALLY by skill-state-initializer.py hook
+# You do NOT need to run this manually
+mkdir -p .claude && cat > .claude/forge-state.json << 'EOF'
 {"started_at": "2025-01-26T10:00:00Z", "task": "user task"}
 EOF
 
-# Also create user-level state for cross-repo work
-mkdir -p ~/.claude && cat > ~/.claude/godo-state.json << 'EOF'
+mkdir -p ~/.claude && cat > ~/.claude/forge-state.json << 'EOF'
 {"started_at": "2025-01-26T10:00:00Z", "origin_project": "/path/to/project"}
 EOF
 ```
 
-### Phase 0.5: Codebase Context (MANDATORY)
+### Phase 0.5: Lite Heavy Planning (MANDATORY)
 
 **This phase is required before making any changes.**
 
@@ -82,12 +120,9 @@ EOF
    - Environment and deployment configs
    - Relevant code patterns for the task
    - Existing tests and validation
-3. **Write to plan file**:
-   - What you understand about the codebase
-   - How the task fits into existing architecture
-   - Implementation approach with specific files
-   - Potential risks or dependencies
-4. `ExitPlanMode` - Get plan approved
+3. **Launch 2 parallel Opus agents** (First Principles + Implementer)
+4. **Synthesize tradeoffs** and write to plan file
+5. `ExitPlanMode` - Get plan approved
 
 **Why this matters**: Jumping straight to code leads to broken functionality, inconsistent patterns, and wasted effort.
 
@@ -175,9 +210,10 @@ deployed_at_version: "abc1234"
 
 ## Comparison with /appfix
 
-| Aspect | /godo | /appfix |
-|--------|-------|---------|
+| Aspect | /forge | /appfix |
+|--------|--------|---------|
 | **Purpose** | Any task | Debugging failures |
+| **Lite Heavy planning** | Yes (2 agents) | No |
 | **docs_read_at_start** | Not required | Required |
 | **Health check phase** | No | Yes |
 | **Log collection** | No | Yes |
@@ -186,7 +222,7 @@ deployed_at_version: "abc1234"
 | **Browser verification** | Required | Required |
 | **Checkpoint schema** | Same | Same |
 
-`/godo` is the universal base. `/appfix` adds debugging-specific phases.
+`/forge` is the universal base with Lite Heavy planning. `/appfix` adds debugging-specific phases.
 
 ---
 
@@ -232,13 +268,13 @@ ruff check --fix . && pyright
 
 | File | Purpose |
 |------|---------|
-| `.claude/godo-state.json` | Enables auto-approval hooks |
+| `.claude/forge-state.json` | Enables auto-approval hooks |
 | `.claude/completion-checkpoint.json` | Boolean self-report for validation |
-| `~/.claude/godo-state.json` | User-level state for cross-repo work |
+| `~/.claude/forge-state.json` | User-level state for cross-repo work |
 
 ### Cleanup
 
 Remove state files when done:
 ```bash
-rm -f ~/.claude/godo-state.json .claude/godo-state.json
+rm -f ~/.claude/forge-state.json .claude/forge-state.json
 ```

@@ -151,7 +151,7 @@ Search queries should reflect this. "AI best practices" returns stale content; "
 
 ## Execution Strategy
 
-### Round 1: Breadth (Launch 5 Parallel Agents)
+### Round 1: Breadth (Launch 6 Parallel Agents)
 
 **CRITICAL**: Launch ALL agents in a SINGLE message with multiple Task tool calls. This makes them run in parallel.
 
@@ -268,6 +268,75 @@ Answer as if you're designing for a god-tier AI SWE that's 1000x more capable th
 - Where are we optimizing for cost when we should optimize for capability?
 
 **Your output**: The ambitious, intelligence-maximizing approach. Don't hedge.
+"""
+)
+```
+
+---
+
+**REQUIRED AGENT 3: Data Architect**
+```
+Task(
+  subagent_type="general-purpose",
+  description="Data Architecture Analysis",
+  model="opus",
+  prompt="""You are a data architect who designs clean, scalable data systems.
+
+**Core principles you apply:**
+
+1. **Progressive Compression** - Data should exist at multiple fidelity levels:
+   - Full models for storage/processing (all fields, full validation)
+   - Fingerprints for fast filtering (key fields only, hashable)
+   - Signatures for matching (minimal fields for comparison)
+   - Each level is 10x smaller than the previous
+
+2. **Validate at Boundaries, Trust Inside** - Field validators at ingestion points normalize data once:
+   - Mapping tables convert variants to canonical forms (e.g., "Sr." → "Senior")
+   - Enums over free-form strings wherever possible
+   - After validation, internal code trusts the data without re-checking
+
+3. **Separation of Concerns by Schema** - Organize data by purpose, not by entity:
+   - External/ingestion schemas (raw, untrusted)
+   - Core/canonical schemas (validated, normalized)
+   - Derived/computed schemas (materialized views, caches)
+   - Each schema has clear ownership and mutation rules
+
+4. **Resource Management Patterns**:
+   - Short-lived sessions/connections during long operations
+   - Explicit cleanup in finally blocks, not reliance on GC
+   - FOR UPDATE SKIP LOCKED for safe horizontal job claiming
+   - Semaphore-based backpressure (don't overwhelm downstream systems)
+
+5. **KISS over Cleverness**:
+   - If a junior dev can't understand it in 30 seconds, it's too complex
+   - Explicit is better than implicit (no magic)
+   - Flat is better than nested
+   - Delete code that "might be useful later"
+
+Question: [INSERT FULL QUESTION]
+
+## Your Environment
+Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
+Infra: Azure Container Apps + GitHub Actions + Terraform | AI: PydanticAI with Opus 4.5
+
+## Before You Answer
+
+You have FULL TOOL ACCESS. Use it.
+
+1. **Search the codebase** for data models, schemas, validators (Glob for `**/schemas/**`, `**/models/**`)
+2. **Trace data flow** - Where does data enter? How is it transformed? Where does it exit?
+3. **Find complexity** - Nested structures, repeated validation, implicit conversions
+
+## Your Mission
+
+From a data architecture perspective:
+- Where is data being validated multiple times? (DRY violation)
+- Where are free-form strings used instead of canonical enums?
+- Where could progressive compression reduce memory/tokens?
+- Where are resources (connections, sessions, file handles) being held too long?
+- What data transformations are implicit/magical vs explicit?
+
+**Your output**: Specific architectural improvements with code-level recommendations. Name files and patterns to change.
 """
 )
 ```
@@ -415,7 +484,7 @@ What would make you mass-revert this PR at 2am?
 
 ### Intermediate Synthesis (After Round 1)
 
-After all 5 agents return, synthesize their outputs:
+After all 6 agents return, synthesize their outputs:
 
 **IMPLEMENTATION MODE synthesis:**
 
@@ -768,17 +837,44 @@ After Round 2 (or Round 3 if extension was triggered), generate the final answer
 
 ## Design Philosophy
 
-**Intelligence-first, never cost-first:**
+**Intelligence-first for high-demanding tasks:**
+- /heavy is deep reasoning work — always use maximum intelligence (Opus 4.5, Gemini 3 Pro, GPT 5.2)
 - Every token spent on good AI engineering returns 10x value
-- Always use Opus for all agents — optimize for intelligence and capability
-- Never optimize for cost at the expense of quality
-- The goal is a god-tier AI SWE x1000 engineer, not a budget-conscious assistant
+- For complex analysis, quality of response must be as good as possible
+- The goal is god-tier AI SWE x1000 engineer quality
 
-**Context is not the bottleneck:**
-- Context windows are large (200k+ tokens) — don't over-optimize for brevity
-- Subagents have their own context windows — isolation is built-in
-- Comprehensive analysis beats artificially truncated reasoning
+**Model selection philosophy (beyond /heavy):**
+- **High-demanding tasks** (deep reasoning, Claude Code, complex analysis): Always frontier intelligence tier
+- **Scaled operational work** (recruitment, batch processing): Cheap models (~$0.30/M in, $0.50/M out) are already better than humans and economical at scale
+- The key insight: Even knowledge work previously not economical to automate is now viable with cheap frontier models
+- Match model tier to task demands — don't use Opus for bulk extraction, don't use Flash for strategic analysis
+
+**Context Engineering (from research):**
+
+The discipline of designing dynamic systems that assemble and deliver the right information, tools, and instructions to an LLM in the right format to enable it to reliably complete a task.
+
+**Core insight**: Most agent failures are not model failures—they are context failures. The model is smart enough; the challenge is providing the right information at the right time.
+
+**Context SIZE is not the bottleneck** (windows are 200k+ tokens):
+- Don't over-optimize for brevity — comprehensive analysis beats truncated reasoning
+- Subagents have their own context windows — ISOLATE pattern is built-in
 - Let agents think as long as they need to think
+
+**Context QUALITY is the bottleneck** (Four Buckets Framework):
+1. **WRITE** (External Memory): Persist critical information outside the context window
+   - Synthesis documents, state files, checkpoint schemas
+2. **SELECT** (Relevant Retrieval): Retrieve only what's relevant to the current task
+   - Dynamic few-shot selection, targeted research
+3. **COMPRESS** (Summarization): What you remove matters as much as what you keep
+   - Focused 300-token context often outperforms unfocused 113k-token context
+4. **ISOLATE** (Compartmentalized Workflows): Split context across sub-agents
+   - Each agent gets specific tools, instructions, and its own context window
+
+**Anti-patterns to avoid**:
+- **Context Poisoning**: Hallucination enters context and gets repeatedly referenced
+- **Context Distraction**: Too much irrelevant context overwhelms reasoning
+- **Context Confusion**: Superfluous context influences responses incorrectly
+- **Monolithic wall-of-text**: Pastes with no provenance or structure
 
 **Bet on model intelligence:**
 - Frontier models (Opus 4.5, GPT-5.2) are smarter than most humans at most tasks
@@ -815,6 +911,12 @@ After Round 2 (or Round 3 if extension was triggered), generate the final answer
 - Research before opinion: local codebase (Glob/Grep/Read), web (WebSearch), vendor docs
 - Opinion without evidence is speculation; research-backed analysis is insight
 - Vendor docs live in the repo — search for them before inventing approaches
+
+**Practitioner wisdom (from context engineering research):**
+- Simon Willison: "Context engineering captures the fact that previous model responses are key—prompt engineering suggests only user prompts matter"
+- Andrej Karpathy: "Context engineering is the delicate art and science of filling the context window with just the right information for the next step"
+- Eugene Yan: "Even if the answer is in the context and in the top position, accuracy is only 75%—don't neglect retrieval"
+- Hamel Husain: "Error analysis is all you need—your evaluation strategy should emerge from observed failure patterns"
 
 **Tech stack awareness:**
 - Agents know Motium runs Next.js + PydanticAI + Azure Container Apps

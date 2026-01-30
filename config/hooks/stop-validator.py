@@ -95,7 +95,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     """Determine if this session requires a completion checkpoint.
 
     Checkpoint required when:
-    - Autonomous mode is active (godo-state.json or appfix-state.json exists)
+    - Autonomous mode is active (forge-state.json or appfix-state.json exists)
     - THIS SESSION made code changes (diff hash changed since session start)
     - A plan file exists for this project
 
