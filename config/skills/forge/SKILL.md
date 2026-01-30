@@ -20,7 +20,8 @@ This workflow uses a **deterministic boolean checkpoint** to enforce completion:
 │                                                                  │
 │  Check booleans deterministically:                               │
 │    - is_job_complete: false → BLOCKED                            │
-│    - web_testing_done: false → BLOCKED                           │
+│    - web_testing_done: false (web projects) → BLOCKED            │
+│    - maestro_tests_passed: false (mobile projects) → BLOCKED     │
 │    - deployed: false (if code changed) → BLOCKED                 │
 │    - linters_pass: false (if code changed) → BLOCKED             │
 │    - what_remains not empty → BLOCKED                            │
@@ -119,26 +120,24 @@ TEST_PASSWORD=your-test-password
 
 Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 
+### Web Projects
+
 ```json
 {
   "self_report": {
     "code_changes_made": true,
     "web_testing_done": true,
     "web_testing_done_at_version": "abc1234",
-    "api_testing_done": true,
     "deployed": true,
     "deployed_at_version": "abc1234",
     "console_errors_checked": true,
-    "console_errors_checked_at_version": "abc1234",
     "linters_pass": true,
     "linters_pass_at_version": "abc1234",
-    "preexisting_issues_fixed": true,
     "is_job_complete": true
   },
   "reflection": {
     "what_was_done": "Implemented feature X, deployed to staging, verified in browser",
-    "what_remains": "none",
-    "blockers": null
+    "what_remains": "none"
   },
   "evidence": {
     "urls_tested": ["https://staging.example.com/feature"],
@@ -147,16 +146,56 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 }
 ```
 
+### Mobile Projects
+
+```json
+{
+  "self_report": {
+    "code_changes_made": true,
+    "maestro_mcp_used": true,
+    "full_journeys_validated": true,
+    "maestro_tests_passed": true,
+    "maestro_tests_passed_at_version": "abc1234",
+    "linters_pass": true,
+    "linters_pass_at_version": "abc1234",
+    "is_job_complete": true
+  },
+  "reflection": {
+    "what_was_done": "Fixed auth guard, verified via Maestro E2E",
+    "what_remains": "none"
+  },
+  "evidence": {
+    "mcp_tools_used": ["mcp__maestro__run_flow", "mcp__maestro__hierarchy"],
+    "maestro_flows_tested": ["J2-returning-user-login.yaml", "J3-main-app-navigation.yaml"],
+    "platform": "ios"
+  }
+}
+```
+
+### Common Fields
+
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `code_changes_made` | bool | yes | Were any code files modified? |
+| `linters_pass` | bool | if code changed | Did all linters pass with zero errors? |
+| `is_job_complete` | bool | yes | **Critical** - Is the job ACTUALLY done? |
+| `what_remains` | string | yes | Must be "none" to allow stop |
+
+### Web-Specific Fields
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
 | `web_testing_done` | bool | yes | Did you verify in a real browser? |
 | `deployed` | bool | conditional | Did you deploy the changes? |
 | `console_errors_checked` | bool | yes | Did you check browser console? |
-| `linters_pass` | bool | if code changed | Did all linters pass with zero errors? |
-| `preexisting_issues_fixed` | bool | if code changed | Did you fix ALL issues (no excuses)? |
-| `is_job_complete` | bool | yes | **Critical** - Is the job ACTUALLY done? |
-| `what_remains` | string | yes | Must be "none" to allow stop |
+
+### Mobile-Specific Fields
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `maestro_mcp_used` | bool | yes | Did you use Maestro MCP tools (not bash)? |
+| `full_journeys_validated` | bool | yes | Did you run complete user journeys (J2+J3)? |
+| `maestro_tests_passed` | bool | yes | Did all Maestro E2E tests pass? |
 
 ## Workflow
 
@@ -511,9 +550,11 @@ gh workflow run deploy.yml -f environment=staging
 gh run watch --exit-status
 ```
 
-## Phase 2: Verification (MANDATORY)
+## Phase 2: Verification (MANDATORY - Platform-Aware)
 
-### CRITICAL: Use Surf CLI First, Not Chrome MCP
+**The validator auto-detects your platform and enforces appropriate testing.**
+
+### Web Projects: Surf CLI / Chrome MCP
 
 **DO NOT call Chrome MCP tools (mcp__claude-in-chrome__*) for verification.**
 
@@ -530,35 +571,44 @@ python3 ~/.claude/hooks/surf-verify.py --urls "https://staging.example.com/featu
 cat .claude/web-smoke/summary.json
 ```
 
-```
-CORRECT:
-1. Run surf-verify.py first
-2. Only if Surf fails → Fall back to Chrome MCP
-
-WRONG:
-- Calling mcp__claude-in-chrome__tabs_context as first step
-- Using Chrome MCP "because it's easier"
-- Skipping Surf without trying it
-```
-
-### Fallback: Chrome MCP (ONLY if Surf CLI unavailable)
-
-**Only use Chrome MCP if Surf CLI is not installed or surf-verify.py fails.**
-
+**Fallback: Chrome MCP** (only if Surf CLI unavailable):
 ```
 - mcp__claude-in-chrome__navigate to the app URL
 - mcp__claude-in-chrome__computer action=screenshot
 - mcp__claude-in-chrome__read_console_messages
 ```
 
-When using Chrome MCP fallback, you MUST manually create `.claude/web-smoke/summary.json`.
+### Mobile Projects: Maestro MCP
+
+**If the project contains `app.json`, `eas.json`, or `ios/`/`android/` directories, you MUST use Maestro MCP.**
+
+```
+# Minimum required journeys
+mcp__maestro__run_flow(flow: ".maestro/journeys/J2-returning-user-login.yaml")
+mcp__maestro__run_flow(flow: ".maestro/journeys/J3-main-app-navigation.yaml")
+
+# Create artifacts
+mkdir -p .claude/maestro-smoke
+# Maestro MCP auto-saves screenshots and summary
+```
+
+**DO NOT use bash `maestro test` commands.** Always use Maestro MCP tools.
 
 ### Verification Checklist
+
+**Web Projects:**
 - [ ] Surf CLI tried first (or documented why not)
 - [ ] Navigate to actual app (not just /health)
 - [ ] Screenshot captured showing feature works
 - [ ] Console has ZERO errors
 - [ ] Data actually displays (not spinner)
+
+**Mobile Projects:**
+- [ ] Maestro MCP tools used (not bash commands)
+- [ ] Full journeys validated (J2 + J3 minimum)
+- [ ] Screenshots captured via MCP
+- [ ] All flows passing
+- [ ] Artifacts in .claude/maestro-smoke/
 
 ## Phase 3: Complete
 
@@ -622,10 +672,14 @@ rm -f ~/.claude/forge-state.json .claude/forge-state.json
 | Log collection phase | No | Yes |
 | Service topology | Not required | Required |
 | Linter policy | Strict | Strict |
-| Browser verification | Required | Required |
+| Platform detection | Auto (web vs mobile) | Auto (web vs mobile) |
+| Web verification | Surf CLI + Chrome MCP | Surf CLI + Chrome MCP |
+| Mobile verification | Maestro MCP | Maestro MCP |
 | Completion checkpoint | Same schema | Same schema |
 
 `/forge` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
+
+Both skills now auto-detect mobile projects (via `app.json`, `eas.json`, `ios/`, `android/`) and require Maestro testing instead of browser testing.
 
 ## Parallel Agent Isolation (Git Worktrees)
 
