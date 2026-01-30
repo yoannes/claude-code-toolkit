@@ -63,7 +63,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `/designimprove` | UI improvement |
 | `/uximprove` | UX improvement |
 
-## All Skills (21 active, 2 deprecated)
+## All Skills (21 total)
 
 | Skill | Triggers |
 |-------|----------|
@@ -88,13 +88,6 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `ux-improver` | UX review |
 | `docs-navigator` | Documentation |
 | `revonc-eas-deploy` | /eas, /revonc-deploy, "deploy to testflight", "build ios/android" |
-
-### Deprecated Skills
-
-| Skill | Status | Redirect |
-|-------|--------|----------|
-| `skill-tester` | Deprecated | → skill-sandbox |
-| `skilltest` | Deprecated | → skill-sandbox |
 
 ## Registered Hooks (20 scripts)
 
@@ -137,10 +130,10 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 ```
 namshub/        # THIS IS THE SOURCE OF TRUTH
 ├── config/
-│   ├── settings.json          # Hook definitions
+│   ├── settings.json          # Hook definitions + ENABLE_TOOL_SEARCH=auto
 │   ├── commands/              # 11 skill definition files (+ 3 skill-commands)
 │   ├── hooks/                 # Python/bash hooks (18 registered)
-│   └── skills/                # 18 skills (+ 2 deprecated) ← EDIT HERE
+│   └── skills/                # 21 skills ← EDIT HERE
 ├── docs/                      # Documentation
 ├── scripts/                   # install.sh, doctor.sh
 └── README.md
