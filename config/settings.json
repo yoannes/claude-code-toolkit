@@ -204,7 +204,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$HOME/.claude/hooks/appfix-auto-approve.py\"",
+            "command": "python3 \"$HOME/.claude/hooks/permissionrequest-auto-approve.py\"",
             "timeout": 5
           }
         ]
