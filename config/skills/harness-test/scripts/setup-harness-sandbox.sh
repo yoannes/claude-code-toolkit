@@ -33,7 +33,7 @@ PROJECT_DIR="${1:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if ! "$SCRIPT_DIR/detect-harness.sh" "$PROJECT_DIR" >/dev/null 2>&1; then
     echo -e "${RED}ERROR: Not a harness project: $PROJECT_DIR${NC}" >&2
-    echo "Run from claude-code-toolkit directory or pass path as argument" >&2
+    echo "Run from halt directory or pass path as argument" >&2
     exit 1
 fi
 
@@ -54,24 +54,21 @@ mkdir -p "$FAKE_CLAUDE_DIR"
 mkdir -p "$MOCK_BIN"
 
 # =============================================================================
-# STEP 1: Create fake credentials file (security)
+# STEP 1: Copy real credentials (needed for Claude CLI to authenticate)
 # =============================================================================
-echo -e "${YELLOW}[1/6] Creating fake credentials file...${NC}" >&2
+echo -e "${YELLOW}[1/6] Setting up credentials...${NC}" >&2
 
-cat > "$FAKE_CLAUDE_DIR/.credentials-export.json" << 'EOF'
-{
-  "claudeAiOauth": {
-    "accessToken": "sk-ant-HARNESS-SANDBOX-FAKE-TOKEN-DO-NOT-USE-000000000000000000000000000000000000",
-    "refreshToken": "sk-ant-HARNESS-SANDBOX-FAKE-REFRESH-DO-NOT-USE-000000000000000000000000000000000000",
-    "expiresAt": 0,
-    "scopes": ["harness:test:only"],
-    "subscriptionType": "harness-sandbox",
-    "rateLimitTier": "sandbox"
-  },
-  "_warning": "HARNESS SANDBOX FAKE CREDENTIALS. THESE TOKENS DO NOT WORK."
-}
-EOF
-chmod 600 "$FAKE_CLAUDE_DIR/.credentials-export.json"
+# Copy real credentials so Claude can authenticate in the sandbox.
+# Security is maintained through mock commands (gh, az) that block deployments/PRs.
+REAL_CREDS="$HOME/.claude/.credentials-export.json"
+if [[ -f "$REAL_CREDS" ]]; then
+    cp "$REAL_CREDS" "$FAKE_CLAUDE_DIR/.credentials-export.json"
+    chmod 600 "$FAKE_CLAUDE_DIR/.credentials-export.json"
+    echo -e "  Copied real credentials to sandbox" >&2
+else
+    echo -e "${YELLOW}  WARNING: No credentials found at $REAL_CREDS${NC}" >&2
+    echo -e "  Claude CLI will not be able to authenticate in sandbox" >&2
+fi
 
 # =============================================================================
 # STEP 2: Create git worktree for project isolation
@@ -84,7 +81,7 @@ BRANCH_NAME="harness-sandbox/$SANDBOX_ID"
     git branch -D "$BRANCH_NAME" 2>/dev/null || true
     git worktree add -b "$BRANCH_NAME" "$PROJECT_WORKTREE" HEAD 2>/dev/null || {
         # Fallback: detached HEAD
-        git worktree add "$PROJECT_WORKTREE" HEAD --detach
+        git worktree add "$PROJECT_WORKTREE" HEAD --detach 2>/dev/null
     }
 )
 
@@ -201,12 +198,12 @@ export PATH="$MOCK_BIN:\$PATH"
 # Project directory
 export SANDBOX_PROJECT="$PROJECT_WORKTREE"
 
-# Scrub sensitive environment variables
-unset ANTHROPIC_API_KEY OPENAI_API_KEY GITHUB_TOKEN GH_TOKEN
+# Scrub sensitive environment variables (keep Claude auth — needed for API access)
+# Security is maintained through mock commands (gh, az) and credential-file copy
+unset OPENAI_API_KEY GITHUB_TOKEN GH_TOKEN
 unset AZURE_CLIENT_SECRET AZURE_CLIENT_ID AZURE_TENANT_ID
 unset AWS_SECRET_ACCESS_KEY AWS_ACCESS_KEY_ID AWS_SESSION_TOKEN
 unset DATABASE_URL POSTGRES_PASSWORD
-unset CLAUDE_ACCESS_TOKEN CLAUDE_REFRESH_TOKEN CLAUDE_API_KEY
 
 echo "Harness sandbox loaded: $SANDBOX_ID"
 echo "  HOME=\$HOME"

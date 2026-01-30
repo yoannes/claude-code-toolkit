@@ -8,8 +8,8 @@
 #
 # Markers:
 #   1. Directory structure: config/hooks/, config/skills/, config/settings.json
-#   2. Git remote contains "claude-code-toolkit"
-#   3. README.md mentions "Claude Code Toolkit"
+#   2. Git remote contains "halt"
+#   3. README.md mentions "Halt"
 #
 # Usage:
 #   ./detect-harness.sh [directory]
@@ -35,19 +35,19 @@ if [[ -f "config/settings.json" ]] && \
     fi
 fi
 
-# Marker 2: Git remote contains "claude-code-toolkit"
-if git remote -v 2>/dev/null | grep -q "claude-code-toolkit"; then
+# Marker 2: Git remote contains "halt"
+if git remote -v 2>/dev/null | grep -q "halt"; then
     MARKERS_FOUND=$((MARKERS_FOUND + 1))
     if [[ -n "${HARNESS_DEBUG:-}" ]]; then
-        echo "Marker 2 found: Git remote contains 'claude-code-toolkit'" >&2
+        echo "Marker 2 found: Git remote contains 'halt'" >&2
     fi
 fi
 
-# Marker 3: README.md mentions "Claude Code Toolkit"
-if grep -qi "Claude Code Toolkit" README.md 2>/dev/null; then
+# Marker 3: README.md mentions "Halt"
+if grep -qi "Halt" README.md 2>/dev/null; then
     MARKERS_FOUND=$((MARKERS_FOUND + 1))
     if [[ -n "${HARNESS_DEBUG:-}" ]]; then
-        echo "Marker 3 found: README.md mentions 'Claude Code Toolkit'" >&2
+        echo "Marker 3 found: README.md mentions 'Halt'" >&2
     fi
 fi
 

@@ -1,6 +1,6 @@
 ---
 name: harness-test
-description: Test Claude Code harness changes (hooks, skills, settings) in isolated sandbox. Auto-triggers in /forge when modifying toolkit. Use "/harness-test" or "test harness changes".
+description: Test Claude Code harness changes (hooks, skills, settings) in isolated sandbox. Auto-triggers in /build when modifying toolkit. Use "/harness-test" or "test harness changes".
 ---
 
 # Harness Test Skill (/harness-test)
@@ -23,13 +23,13 @@ This skill:
 ## Triggers
 
 - `/harness-test` - explicit invocation
-- Auto-triggered by `/forge` when:
-  1. Working in claude-code-toolkit repository
+- Auto-triggered by `/build` when:
+  1. Working in halt repository
   2. Modified files include harness files (hooks, skills, settings)
 
-## Integration with /forge
+## Integration with /build
 
-When `/forge` is active in the toolkit repository:
+When `/build` is active in the toolkit repository:
 
 ```
 PHASE 1: EXECUTE (make code changes to hooks/skills)
@@ -223,7 +223,7 @@ Test cases are JSON files in `test-cases/` directory:
 |-----------|---------------|
 | `plan-mode-enforcer-blocks-code-write` | Edit/Write blocked before plan mode |
 | `plan-mode-enforcer-allows-claude-dir` | Write to .claude/ always allowed |
-| `skill-state-initializer-forge` | `/forge` creates forge-state.json |
+| `skill-state-initializer-forge` | `/build` creates build-state.json |
 | `auto-approval-in-forge-mode` | Tools auto-approved in autonomous mode |
 
 ## Harness Project Detection
@@ -231,8 +231,8 @@ Test cases are JSON files in `test-cases/` directory:
 Detected by checking for 2 of 3 markers:
 
 1. **Directory structure**: `config/hooks/`, `config/skills/`, `config/settings.json` exist
-2. **Git remote**: Contains "claude-code-toolkit"
-3. **README.md**: Mentions "Claude Code Toolkit"
+2. **Git remote**: Contains "halt"
+3. **README.md**: Mentions "Halt"
 
 ## Limitations
 

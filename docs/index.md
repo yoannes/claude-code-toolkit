@@ -1,4 +1,4 @@
-# Claude Code Toolkit Reference
+# Halt Reference
 
 ## Quick Links
 
@@ -10,10 +10,10 @@
 
 ## The Four Core Skills
 
-### `/forge` — Universal Task Execution
+### `/build` — Universal Task Execution
 **Use when**: You have a task and want autonomous execution.
 ```
-/forge add a logout button to the navbar
+/build add a logout button to the navbar
 ```
 **Lite Heavy planning** (4 parallel Opus agents: First Principles + AGI-Pilled + 2 dynamic perspectives) → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
 
@@ -44,7 +44,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 
 | Command | Purpose |
 |---------|---------|
-| `/forge` | Autonomous task execution (with Lite Heavy planning) |
+| `/build` | Autonomous task execution (with Lite Heavy planning) |
 | `/repair` | Unified debugging router (web → appfix, mobile → mobileappfix) |
 | `/burndown` | Autonomous tech debt elimination (combines /deslop + /qa) |
 | `/heavy` | Multi-agent analysis |
@@ -66,14 +66,14 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 
 | Skill | Triggers |
 |-------|----------|
-| `forge` | /forge, /godo (legacy), "go do", "just do it", "execute this" |
+| `build` | /build, /godo (legacy), "go do", "just do it", "execute this" |
 | `repair` | /repair, /appfix, /mobileappfix, "fix the app", "debug production" |
 | `burndown` | /burndown, "burn down debt", "clean up codebase", "fix the slop" |
 | `appfix` | (Internal: web debugging - prefer /repair) |
 | `heavy` | /heavy, "heavy analysis", "multiple perspectives", "debate this" |
 | `mobileappfix` | (Internal: mobile debugging - prefer /repair) |
 | `skill-sandbox` | /skill-sandbox, "test skill", "sandbox test" |
-| `harness-test` | /harness-test, "test harness changes" (auto-triggers in /forge for toolkit) |
+| `harness-test` | /harness-test, "test harness changes" (auto-triggers in /build for toolkit) |
 | `toolkit` | /toolkit, "update toolkit" |
 | `deploy-pipeline` | /deploy, deployment questions |
 | `webapp-testing` | Browser testing |
@@ -124,7 +124,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | [Hooks](concepts/hooks.md) | Hook lifecycle |
 | [Architecture](architecture.md) | System design |
 | [Appfix Guide](skills/appfix-guide.md) | Complete debugging guide |
-| [Forge Guide](skills/forge-guide.md) | Autonomous task execution guide (with Lite Heavy) |
+| [Forge Guide](skills/build-guide.md) | Autonomous task execution guide (with Lite Heavy) |
 | [Philosophy](philosophy.md) | Core philosophy and principles |
 | [Settings Reference](reference/settings.md) | Configuration options |
 | [Azure Command Guard](hooks/azure-command-guard.md) | Azure CLI security hook |
@@ -133,7 +133,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 ## Directory Structure
 
 ```
-claude-code-toolkit/           # THIS IS THE SOURCE OF TRUTH
+halt/           # THIS IS THE SOURCE OF TRUTH
 ├── config/
 │   ├── settings.json          # Hook definitions
 │   ├── commands/              # 11 skill definition files (+ 3 skill-commands)

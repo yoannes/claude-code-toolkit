@@ -59,7 +59,7 @@ The `setup` object configures the sandbox before running the test:
 
 ```json
 {
-  "state_file": "forge-state.json",
+  "state_file": "build-state.json",
   "state_content": {
     "iteration": 1,
     "plan_mode_completed": false
@@ -142,7 +142,7 @@ Assert that a state file field has a specific value.
 ```json
 {
   "type": "state_field",
-  "file": "forge-state.json",
+  "file": "build-state.json",
   "field": "iteration",
   "expected": "1"
 }
@@ -168,7 +168,7 @@ Assert that Claude exited with a specific code.
   "type": "hook",
   "target": "config/hooks/plan-mode-enforcer.py",
   "setup": {
-    "state_file": "forge-state.json",
+    "state_file": "build-state.json",
     "state_content": {
       "iteration": 1,
       "plan_mode_completed": false,

@@ -16,16 +16,17 @@ import sys
 # Add hooks directory to path for sibling imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _common import (
-    get_code_version,
+from _common import get_code_version
+from _checkpoint import (
     get_fields_to_invalidate,
     save_checkpoint,
-    is_repair_active,
+    VERSION_DEPENDENT_FIELDS,
+)
+from _state import (
     is_appfix_active,
     is_mobileappfix_active,
-    is_forge_active,
+    is_build_active,
     is_autonomous_mode_active,
-    VERSION_DEPENDENT_FIELDS,
 )
 
 
@@ -591,7 +592,7 @@ def validate_web_testing(
 ) -> tuple[list[str], bool]:
     """Check web testing requirements for autonomous mode.
 
-    In autonomous mode (appfix/godo), web smoke verification is MANDATORY
+    In autonomous mode (appfix/build), web smoke verification is MANDATORY
     when code changes are made. Backend-only changes are NOT exempt -
     they can still break the frontend.
 
@@ -693,7 +694,7 @@ def validate_mobile_testing(
 
     NOTE: This function is now called for:
     - /mobileappfix mode (explicit mobile debugging)
-    - /forge mode when is_mobile_project() returns True
+    - /build mode when is_mobile_project() returns True
 
     The caller (validate_checkpoint) handles the mode detection logic.
 
@@ -809,14 +810,14 @@ def validate_checkpoint(
     # 4. Determine if this is a mobile or web project
     has_infra = report.get("az_cli_changes_made", False)
 
-    # CRITICAL: Detect mobile projects for BOTH /mobileappfix AND /forge modes
-    # This fixes the bug where /forge on a mobile app allowed web_testing_done: true
+    # CRITICAL: Detect mobile projects for BOTH /mobileappfix AND /build modes
+    # This fixes the bug where /build on a mobile app allowed web_testing_done: true
     # to bypass mobile testing requirements
     is_mobile_mode = is_mobileappfix_active(cwd)
     is_mobile = is_mobile_project(cwd)
 
-    # For forge mode: if project is mobile, require mobile testing
-    if is_forge_active(cwd) and is_mobile and not is_mobile_mode:
+    # For build mode: if project is mobile, require mobile testing
+    if is_build_active(cwd) and is_mobile and not is_mobile_mode:
         # Forge on mobile project - treat as mobile mode for testing requirements
         is_mobile_mode = True
 

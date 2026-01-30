@@ -2,14 +2,14 @@
 """
 UserPromptSubmit hook that creates state files for autonomous execution skills.
 
-When the user's prompt matches appfix or godo triggers, this hook immediately
+When the user's prompt matches appfix or build triggers, this hook immediately
 creates the appropriate state file BEFORE Claude starts processing. This ensures
 the auto-approval hooks can detect autonomous mode from the very first tool call.
 
 Hook event: UserPromptSubmit
 
 Why this hook exists:
-- Auto-approval hooks check for .claude/appfix-state.json or .claude/godo-state.json
+- Auto-approval hooks check for .claude/appfix-state.json or .claude/build-state.json
 - Without the state file, PermissionRequest hooks exit silently (no auto-approval)
 - Previously, state file creation was an instruction in SKILL.md that Claude had
   to execute via Bash - but by then, EnterPlanMode's PermissionRequest had already fired
@@ -29,31 +29,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _common import (
-    cleanup_autonomous_state,
     is_state_expired,
     is_state_for_session,
-    load_state_file,
     log_debug,
-    _scoped_filename,
+)
+from _state import (
+    cleanup_autonomous_state,
+    load_state_file,
 )
 
 # Deactivation patterns - checked BEFORE activation
-# /repair and /forge are the two primary autonomous skills
+# /repair and /build are the two primary autonomous skills
 DEACTIVATION_PATTERNS = [
     r"(?:^|\s)/repair\s+off\b",  # Primary debugging skill
-    r"(?:^|\s)/forge\s+off\b",  # Primary task execution skill
+    r"(?:^|\s)/build\s+off\b",  # Primary task execution skill
     r"(?:^|\s)/burndown\s+off\b",  # Tech debt elimination skill
     r"(?:^|\s)/appfix\s+off\b",  # Internal web debugging
     r"(?:^|\s)/mobileappfix\s+off\b",  # Internal mobile debugging
+    r"(?:^|\s)/forge\s+off\b",  # Legacy alias
     r"(?:^|\s)/godo\s+off\b",  # Legacy alias
     r"\bstop autonomous mode\b",
     r"\bdisable auto[- ]?approval\b",
-    r"\bturn off (repair|forge|burndown|appfix|mobileappfix|godo)\b",
+    r"\bturn off (repair|build|forge|burndown|appfix|mobileappfix|godo)\b",
 ]
 
 # Trigger patterns for each skill
 # /repair is the PRIMARY debugging skill (creates appfix-state.json internally)
-# /forge is the PRIMARY task execution skill
+# /build is the PRIMARY task execution skill
 # Patterns that indicate mobile app vs web app
 MOBILE_REPAIR_PATTERNS = [
     r"(?:^|\s)/mobileappfix\b",
@@ -84,8 +86,9 @@ SKILL_TRIGGERS = {
         r"\bmaestro (tests? )?(failing|broken|not working)\b",  # Mobile E2E triggers
         r"\bsimulator (crash|fail|not working)\b",  # Mobile-specific
     ],
-    "forge": [  # PRIMARY task execution skill
-        r"(?:^|\s)/forge\b",  # Primary slash command
+    "build": [  # PRIMARY task execution skill
+        r"(?:^|\s)/build\b",  # Primary slash command
+        r"(?:^|\s)/forge\b",  # Legacy alias
         r"(?:^|\s)/godo\b",  # Legacy alias
         r"\bgo do\b",  # Natural language
         r"\bjust do it\b",
@@ -120,7 +123,7 @@ def detect_deactivation(prompt: str) -> bool:
 def detect_skill(prompt: str) -> str | None:
     """Detect which autonomous skill should be activated based on prompt.
 
-    Returns 'repair', 'forge', or None.
+    Returns 'repair', 'build', or None.
     Note: 'repair' triggers create appfix-state.json internally for backwards compatibility.
     """
     prompt_lower = prompt.lower().strip()
@@ -154,13 +157,14 @@ def _has_valid_existing_state(cwd: str, skill_name: str, session_id: str) -> boo
 
     Args:
         cwd: Working directory
-        skill_name: 'repair' or 'forge'
+        skill_name: 'repair' or 'build'
         session_id: Current session ID
 
     Returns:
         True if valid state exists for this session
     """
     # Map repair -> appfix for state file (backwards compatibility)
+    # Map build -> build (new primary name)
     state_skill_name = "appfix" if skill_name == "repair" else skill_name
     state = load_state_file(cwd, f"{state_skill_name}-state.json")
     if state is None:
@@ -259,17 +263,16 @@ def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile
     }
 
     # Add skill-specific fields
-    if skill_name == "forge":
+    if skill_name == "build":
         project_state["task"] = "Detected from user prompt"
 
     success = True
 
-    # Create project-level state file (PID-scoped for multi-agent isolation)
+    # Create project-level state file
     try:
         project_claude_dir = Path(cwd) / ".claude"
         project_claude_dir.mkdir(parents=True, exist_ok=True)
-        scoped_state_filename = _scoped_filename(state_filename)
-        project_state_path = project_claude_dir / scoped_state_filename
+        project_state_path = project_claude_dir / state_filename
         project_state_path.write_text(json.dumps(project_state, indent=2))
     except (OSError, IOError) as e:
         print(f"Warning: Failed to create project state file: {e}", file=sys.stderr)
@@ -383,9 +386,8 @@ def main():
         # Output message (added to context for Claude)
         # Map repair -> appfix for state file name (internal detail)
         state_skill_name = "appfix" if skill_name == "repair" else skill_name
-        scoped_name = _scoped_filename(f"{state_skill_name}-state.json")
         print(f"[skill-state-initializer] Autonomous mode activated: {skill_name}")
-        print(f"State file created: .claude/{scoped_name}")
+        print(f"State file created: .claude/{state_skill_name}-state.json")
         print("Auto-approval hooks are now active.")
 
     sys.exit(0)

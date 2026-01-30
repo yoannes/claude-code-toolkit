@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Claude Code Toolkit Doctor
+# Halt Doctor
 #
 # Comprehensive diagnostics for troubleshooting hook and skill issues.
-# Run this when /appfix or /godo isn't working as expected.
+# Run this when /appfix or /build isn't working as expected.
 #
 # Usage:
 #   ./scripts/doctor.sh              # Run all diagnostics
@@ -46,7 +46,7 @@ done
 
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${CYAN}  CLAUDE CODE TOOLKIT DOCTOR${NC}"
+echo -e "${CYAN}  HALT DOCTOR${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 echo -e "Timestamp: $(date -Iseconds)"
@@ -229,7 +229,7 @@ else
     # Check key hook files
     KEY_HOOKS=(
         "_common.py:Shared utilities"
-        "appfix-auto-approve.py:Auto-approval for appfix/godo"
+        "appfix-auto-approve.py:Auto-approval for appfix/build"
         "plan-mode-enforcer.py:Blocks Edit/Write on first iteration"
         "stop-validator.py:Completion checkpoint validation"
         "checkpoint-invalidator.py:Resets stale checkpoint flags"
@@ -284,7 +284,7 @@ echo "────────────────────────�
 
 # Check user-level state files
 echo "  User-level (~/.claude/):"
-for STATE_FILE in appfix-state.json godo-state.json; do
+for STATE_FILE in appfix-state.json build-state.json; do
     echo -n "    $STATE_FILE: "
     if [ -f "$CLAUDE_DIR/$STATE_FILE" ]; then
         echo -e "${GREEN}EXISTS${NC}"
@@ -303,7 +303,7 @@ echo ""
 echo "  Project-level ($PROJECT_DIR/.claude/):"
 PROJECT_CLAUDE="$PROJECT_DIR/.claude"
 if [ -d "$PROJECT_CLAUDE" ]; then
-    for STATE_FILE in appfix-state.json godo-state.json; do
+    for STATE_FILE in appfix-state.json build-state.json; do
         echo -n "    $STATE_FILE: "
         if [ -f "$PROJECT_CLAUDE/$STATE_FILE" ]; then
             echo -e "${GREEN}EXISTS${NC}"
@@ -603,7 +603,7 @@ if [ ${#ISSUES[@]} -eq 0 ]; then
     echo ""
     echo "  If hooks still aren't working:"
     echo "    1. Restart Claude Code (hooks are captured at session start)"
-    echo "    2. Check that state files exist when running /appfix or /godo"
+    echo "    2. Check that state files exist when running /appfix or /build"
     echo "    3. Review debug log: tail -f /tmp/claude-hooks-debug.log"
 else
     for issue in "${ISSUES[@]}"; do

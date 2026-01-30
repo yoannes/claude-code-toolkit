@@ -96,7 +96,7 @@ Real OAuth tokens found at `~/.claude/.credentials-export.json`:
 
 Global state files found at:
 - `~/.claude/appfix-state.json`
-- `~/.claude/godo-state.json`
+- `~/.claude/build-state.json`
 - `~/.claude/worktree-state.json`
 
 From `hooks/_common.py`:
@@ -177,7 +177,7 @@ cd $SANDBOX_PROJECT
 claude --dangerously-skip-permissions
 
 # 6. Test the skill
-/godo Add a health check endpoint
+/build Add a health check endpoint
 ```
 
 ### One-Liner (Full Secure Test)
@@ -340,7 +340,7 @@ async def test_skill():
     )
 
     async for message in query(
-        prompt="Run /godo to implement a simple hello world",
+        prompt="Run /build to implement a simple hello world",
         options=options
     ):
         print(message)
@@ -467,7 +467,7 @@ mkdir src
 echo "print('hello')" > src/main.py
 
 # Run skill
-claude -p "/godo: Add a greeting function to main.py" \
+claude -p "/build: Add a greeting function to main.py" \
   --dangerously-skip-permissions \
   --no-session-persistence \
   --output-format json \

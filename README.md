@@ -1,4 +1,4 @@
-# Claude Code Toolkit
+# Halt
 
 **The agent that actually finishes.**
 
@@ -7,13 +7,13 @@ Claude Code stops when *you* hit enter. This toolkit adds a stop hook that block
 ## Try It (60 seconds)
 
 ```bash
-git clone https://github.com/Motium-AI/claude-code-toolkit.git
-cd claude-code-toolkit && ./scripts/install.sh
+git clone https://github.com/Motium-AI/halt.git
+cd halt && ./scripts/install.sh
 # Restart Claude Code, then:
 ```
 
 ```
-> /forge add a logout button to the navbar
+> /build add a logout button to the navbar
 ```
 
 Watch what happens:
@@ -28,7 +28,7 @@ If step 5 fails, it loops back. You get working code, not promises.
 
 ## Three Skills
 
-**`/forge`** - Task execution with verification. Give it a task, get working code.
+**`/build`** - Task execution with verification. Give it a task, get working code.
 
 **`/repair`** - Debugging loop. Detects web vs mobile, collects logs, fixes, deploys, verifies. Loops until healthy.
 

@@ -1,6 +1,6 @@
-# /forge - Task-Agnostic Autonomous Execution
+# /build - Task-Agnostic Autonomous Execution
 
-Complete guide to the `/forge` skill for autonomous task execution with Lite Heavy planning and completion validation.
+Complete guide to the `/build` skill for autonomous task execution with Lite Heavy planning and completion validation.
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@ Complete guide to the `/forge` skill for autonomous task execution with Lite Hea
 
 ## Overview
 
-`/forge` is the universal autonomous execution skill. It provides:
+`/build` is the universal autonomous execution skill. It provides:
 
 - **Lite Heavy Planning** - 4 parallel Opus agents (First Principles + AGI-Pilled + 2 dynamic) before execution
 - **100% Autonomous Operation** - No permission prompts, no confirmation requests
@@ -38,7 +38,7 @@ Complete guide to the `/forge` skill for autonomous task execution with Lite Hea
 
 ## When to Use
 
-### Use /forge
+### Use /build
 
 | Scenario | Example |
 |----------|---------|
@@ -100,11 +100,11 @@ TRADEOFF: [topic]
 ```bash
 # State file is created AUTOMATICALLY by skill-state-initializer.py hook
 # You do NOT need to run this manually
-mkdir -p .claude && cat > .claude/forge-state.json << 'EOF'
+mkdir -p .claude && cat > .claude/build-state.json << 'EOF'
 {"started_at": "2025-01-26T10:00:00Z", "task": "user task"}
 EOF
 
-mkdir -p ~/.claude && cat > ~/.claude/forge-state.json << 'EOF'
+mkdir -p ~/.claude && cat > ~/.claude/build-state.json << 'EOF'
 {"started_at": "2025-01-26T10:00:00Z", "origin_project": "/path/to/project"}
 EOF
 ```
@@ -210,7 +210,7 @@ deployed_at_version: "abc1234"
 
 ## Comparison with /appfix
 
-| Aspect | /forge | /appfix |
+| Aspect | /build | /appfix |
 |--------|--------|---------|
 | **Purpose** | Any task | Debugging failures |
 | **Lite Heavy planning** | Yes (4 agents) | No |
@@ -222,7 +222,7 @@ deployed_at_version: "abc1234"
 | **Browser verification** | Required | Required |
 | **Checkpoint schema** | Same | Same |
 
-`/forge` is the universal base with Lite Heavy planning. `/appfix` adds debugging-specific phases.
+`/build` is the universal base with Lite Heavy planning. `/appfix` adds debugging-specific phases.
 
 ---
 
@@ -268,13 +268,13 @@ ruff check --fix . && pyright
 
 | File | Purpose |
 |------|---------|
-| `.claude/forge-state.json` | Enables auto-approval hooks |
+| `.claude/build-state.json` | Enables auto-approval hooks |
 | `.claude/completion-checkpoint.json` | Boolean self-report for validation |
-| `~/.claude/forge-state.json` | User-level state for cross-repo work |
+| `~/.claude/build-state.json` | User-level state for cross-repo work |
 
 ### Cleanup
 
 Remove state files when done:
 ```bash
-rm -f ~/.claude/forge-state.json .claude/forge-state.json
+rm -f ~/.claude/build-state.json .claude/build-state.json
 ```

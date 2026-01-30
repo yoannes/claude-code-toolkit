@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-PostToolUse hook to track Lite Heavy progress for /forge and /burndown skills.
+PostToolUse hook to track Lite Heavy progress for /build and /burndown skills.
 
 Tracks when:
 1. heavy/SKILL.md is read
 2. Task agents with "First Principles" or "AGI-Pilled" in description are launched
 3. Dynamic Task agents are launched (general-purpose/opus with perspective/analysis/review/expert keywords)
 
-Updates the active autonomous state file (forge-state.json or burndown-state.json)
+Updates the active autonomous state file (build-state.json or burndown-state.json)
 with lite_heavy_verification status.
 
 Hook event: PostToolUse
@@ -26,7 +26,8 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import get_autonomous_state, log_debug, _find_state_file_path
+from _common import log_debug
+from _state import get_autonomous_state, _find_state_file_path
 
 
 def is_heavy_skill_path(file_path: str) -> bool:
@@ -73,8 +74,8 @@ def detect_agent_type(task_description: str, subagent_type: str = "", model: str
 
 
 def _find_lite_heavy_state_path(cwd: str) -> Path | None:
-    """Find the active state file that supports Lite Heavy (forge or burndown)."""
-    for filename in ("forge-state.json", "burndown-state.json"):
+    """Find the active state file that supports Lite Heavy (build or burndown)."""
+    for filename in ("build-state.json", "forge-state.json", "burndown-state.json"):
         path = _find_state_file_path(cwd, filename)
         if path:
             return path
@@ -84,7 +85,7 @@ def _find_lite_heavy_state_path(cwd: str) -> Path | None:
 def update_lite_heavy_state(cwd: str, updates: dict) -> bool:
     """Update the Lite Heavy verification state in the active state file.
 
-    Supports both forge-state.json and burndown-state.json.
+    Supports both build-state.json and burndown-state.json.
     Uses _find_state_file_path to locate the PID-scoped or legacy state file.
     """
     state_path = _find_lite_heavy_state_path(cwd)
@@ -121,9 +122,9 @@ def main():
     tool_input = input_data.get("tool_input", {})
     session_id = input_data.get("session_id", "")
 
-    # Only process if forge or burndown is active (both use Lite Heavy planning)
+    # Only process if build or burndown is active (both use Lite Heavy planning)
     state, state_type = get_autonomous_state(cwd, session_id)
-    if state_type not in ("forge", "burndown"):
+    if state_type not in ("build", "burndown"):
         sys.exit(0)
 
     # Only track during first iteration

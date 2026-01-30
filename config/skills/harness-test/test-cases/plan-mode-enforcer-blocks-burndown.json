@@ -1,10 +1,10 @@
 {
-  "name": "plan-mode-enforcer-blocks-code-write",
-  "description": "Verify plan-mode-enforcer blocks Edit/Write to code files when plan_mode_completed=false on first iteration",
+  "name": "plan-mode-enforcer-blocks-burndown",
+  "description": "Verify plan-mode-enforcer blocks Edit/Write to code files when burndown plan_mode_completed=false on first iteration",
   "type": "hook",
   "target": "config/hooks/plan-mode-enforcer.py",
   "setup": {
-    "state_file": "build-state.json",
+    "state_file": "burndown-state.json",
     "state_content": {
       "iteration": 1,
       "plan_mode_completed": false,

@@ -21,13 +21,13 @@ from _sv_validators import (
     has_code_changes,
     has_frontend_changes,
 )
-from _common import (
+from _common import is_worktree
+from _checkpoint import (
     load_checkpoint,
     save_checkpoint,
-    is_worktree,
-    cleanup_autonomous_state,
     get_fields_to_invalidate,
 )
+from _state import cleanup_autonomous_state
 
 
 class TestHasCodeChanges:
@@ -251,19 +251,19 @@ class TestCleanupAutonomousState:
             assert not (nested_claude / "appfix-state.json").exists()
 
     def test_cleans_both_forge_and_appfix(self):
-        """Should clean both forge-state.json and appfix-state.json."""
+        """Should clean both build-state.json and appfix-state.json."""
         with tempfile.TemporaryDirectory() as tmpdir:
             claude_dir = Path(tmpdir) / ".claude"
             claude_dir.mkdir(parents=True)
 
             (claude_dir / "appfix-state.json").write_text('{"test": true}')
-            (claude_dir / "forge-state.json").write_text('{"test": true}')
+            (claude_dir / "build-state.json").write_text('{"test": true}')
 
             deleted = cleanup_autonomous_state(tmpdir)
 
             assert len(deleted) >= 2
             assert not (claude_dir / "appfix-state.json").exists()
-            assert not (claude_dir / "forge-state.json").exists()
+            assert not (claude_dir / "build-state.json").exists()
 
     def test_returns_empty_list_when_no_state_files(self):
         """Should return empty list when no state files exist."""

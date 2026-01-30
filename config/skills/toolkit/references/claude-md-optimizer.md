@@ -167,7 +167,7 @@ npm run build
 
 **What it does**: Documents the lifecycle hooks and skills so Claude understands what automated behavior exists around it.
 
-**Required (if using Claude Code Toolkit)**:
+**Required (if using Halt)**:
 - [ ] Extension types table: Type | Location | Trigger
 - [ ] Available commands with categories
 - [ ] Available skills with triggers and purpose
@@ -178,7 +178,7 @@ npm run build
 **Why this matters**: Without hook documentation, Claude doesn't know:
 - That it will be blocked from editing until plan mode completes
 - That stop-validator will prevent stopping if checkpoint is incomplete
-- That auto-approval only works during /appfix or /godo sessions
+- That auto-approval only works during /appfix or /build sessions
 - That hooks are captured at startup and won't reflect mid-session changes
 
 **Source**: Extracted from settings.json hook definitions and individual hook docstrings.
@@ -189,7 +189,7 @@ npm run build
 
 **What it does**: Documents the checkpoint system that enforces task completion.
 
-**Required (if using /appfix or /godo)**:
+**Required (if using /appfix or /build)**:
 - [ ] Checkpoint JSON structure with field explanations
 - [ ] What the stop hook validates
 - [ ] Key state files and their purpose

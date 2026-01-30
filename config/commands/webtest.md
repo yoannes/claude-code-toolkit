@@ -4,7 +4,7 @@ description: Test new features using Chrome browser automation
 
 Use ultrathink to thoroughly plan and execute test scenarios.
 
-## Autonomous Mode (appfix/godo)
+## Autonomous Mode (repair/build)
 
 When running in autonomous mode, use Surf CLI for deterministic artifact generation that the stop hook validates.
 
@@ -12,7 +12,7 @@ When running in autonomous mode, use Surf CLI for deterministic artifact generat
 
 ```bash
 # Check if autonomous mode is active
-ls .claude/appfix-state.json .claude/godo-state.json 2>/dev/null && echo "AUTONOMOUS MODE ACTIVE"
+ls .claude/appfix-state.json .claude/build-state.json 2>/dev/null && echo "AUTONOMOUS MODE ACTIVE"
 ```
 
 **If autonomous mode is active, follow Steps 2-4. Otherwise, skip to "Overview" section.**

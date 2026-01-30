@@ -15,7 +15,7 @@ This directory contains Python hook scripts that extend Claude Code's lifecycle 
 | `plan-mode-enforcer.py` | PreToolUse (Edit/Write) | Blocks Edit/Write on first godo/appfix iteration until plan mode completed |
 | `appfix-auto-approve.py` | PermissionRequest | Auto-approves ALL tools during godo/appfix mode |
 | `read-docs-trigger.py` | UserPromptSubmit | Suggests reading docs when "read the docs" appears in prompt |
-| `skill-state-initializer.py` | UserPromptSubmit | Creates state files for /appfix and /godo to enable auto-approval |
+| `skill-state-initializer.py` | UserPromptSubmit | Creates state files for /appfix and /build to enable auto-approval |
 | `bash-version-tracker.py` | PostToolUse (Bash) | Tracks version after git commits, updates checkpoint |
 | `checkpoint-write-validator.py` | PostToolUse (Write) | Validates checkpoint file integrity on writes |
 
@@ -33,7 +33,7 @@ This directory contains Python hook scripts that extend Claude Code's lifecycle 
 
 ```python
 # State detection
-is_godo_active(cwd)             # Check if .claude/godo-state.json exists
+is_build_active(cwd)             # Check if .claude/build-state.json exists
 is_appfix_active(cwd)           # Check if .claude/appfix-state.json exists
 is_autonomous_mode_active(cwd)  # Check if either godo or appfix is active
 
@@ -89,7 +89,7 @@ To enable skill suggestions, add to `settings.json` under `UserPromptSubmit`:
 ## Security Model
 
 Auto-approval hooks only activate when a state file exists:
-- `.claude/godo-state.json` - Created by `/godo` skill
+- `.claude/build-state.json` - Created by `/build` skill
 - `.claude/appfix-state.json` - Created by `/appfix` skill
 
 Normal sessions without these files require user approval for all tool operations.

@@ -169,4 +169,4 @@ Before `/repair`, users had to remember:
 | `/repair` | Router | When unsure which debugging skill to use |
 | `/appfix` | Web debugging | When you know it's a web app |
 | `/mobileappfix` | Mobile debugging | When you know it's a mobile app |
-| `/forge` | Task execution | When implementing features, not debugging |
+| `/build` | Task execution | When implementing features, not debugging |

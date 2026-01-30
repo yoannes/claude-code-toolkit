@@ -55,7 +55,7 @@ Skills are markdown files that Claude Code automatically loads when it detects r
 
 ### Via Toolkit Installer (Recommended)
 
-If you're using the Claude Code Toolkit:
+If you're using the Halt:
 
 ```bash
 cd prompts && ./scripts/install.sh
@@ -249,9 +249,9 @@ webapp-testing/
 
 ### 7. godo
 
-**Location**: `~/.claude/skills/godo/`
+**Location**: `~/.claude/skills/build/`
 
-**Triggers**: /godo, "go do", "just do it", "execute this"
+**Triggers**: /build, "go do", "just do it", "execute this"
 
 **Coverage**:
 - Task-agnostic autonomous execution with completion checkpoint
@@ -259,7 +259,7 @@ webapp-testing/
 - Full fix-verify loop: implement → lint → commit → deploy → browser verify
 - Cannot stop until checkpoint passes
 
-**Guide**: [Godo Guide](../skills/godo-guide.md)
+**Guide**: [Godo Guide](../skills/build-guide.md)
 
 ### 8. appfix
 

@@ -8,7 +8,7 @@ Tests the following features:
 3. TTL expiry (8-hour window)
 4. Session binding (session_id validation)
 5. Session guard (concurrent session detection)
-6. Deactivation commands (/appfix off, /godo off)
+6. Deactivation commands (/appfix off, /build off)
 7. Backward compatibility (old state files without session_id)
 8. Cross-repo detection (user-level state)
 
@@ -57,15 +57,12 @@ def make_state_dir(
 
 
 def find_state_file(tmpdir: str, base_name: str = "appfix-state") -> Path | None:
-    """Find a state file (PID-scoped or legacy) in .claude/ directory."""
+    """Find a state file in .claude/ directory."""
     claude_dir = Path(tmpdir) / ".claude"
     if not claude_dir.exists():
         return None
-    scoped = sorted(claude_dir.glob(f"{base_name}.*.json"))
-    if scoped:
-        return scoped[0]
-    legacy = claude_dir / f"{base_name}.json"
-    return legacy if legacy.exists() else None
+    state_file = claude_dir / f"{base_name}.json"
+    return state_file if state_file.exists() else None
 
 
 def make_checkpoint(tmpdir: str, checkpoint: dict) -> Path:
@@ -97,7 +94,6 @@ class TestTTLExpiry:
     """Tests for is_state_expired() function."""
 
     def setup_method(self):
-        # Import _common functions for direct testing
         sys.path.insert(0, str(HOOKS_DIR))
         from _common import is_state_expired
 
@@ -182,7 +178,7 @@ class TestCleanupCheckpointOnly:
 
     def setup_method(self):
         sys.path.insert(0, str(HOOKS_DIR))
-        from _common import cleanup_checkpoint_only
+        from _state import cleanup_checkpoint_only
 
         self.cleanup_checkpoint_only = cleanup_checkpoint_only
         self.tmpdir = tempfile.mkdtemp(prefix="test-cleanup-")
@@ -222,7 +218,7 @@ class TestResetStateForNextTask:
 
     def setup_method(self):
         sys.path.insert(0, str(HOOKS_DIR))
-        from _common import reset_state_for_next_task
+        from _state import reset_state_for_next_task
 
         self.reset_state_for_next_task = reset_state_for_next_task
         self.tmpdir = tempfile.mkdtemp(prefix="test-reset-")
@@ -292,7 +288,7 @@ class TestCleanupExpiredState:
 
     def setup_method(self):
         sys.path.insert(0, str(HOOKS_DIR))
-        from _common import cleanup_expired_state
+        from _state import cleanup_expired_state
 
         self.cleanup_expired_state = cleanup_expired_state
         self.tmpdir = tempfile.mkdtemp(prefix="test-expired-")
@@ -302,7 +298,7 @@ class TestCleanupExpiredState:
     def teardown_method(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
         # Clean up any test user-level state
-        for f in ["appfix-state.json", "forge-state.json"]:
+        for f in ["appfix-state.json", "build-state.json"]:
             p = self.user_state_dir / f
             if p.exists():
                 try:
@@ -390,7 +386,7 @@ class TestPidAlive:
 
 
 class TestSkillStateInitializerDeactivation:
-    """Tests for /appfix off and /godo off deactivation."""
+    """Tests for /appfix off and /build off deactivation."""
 
     def setup_method(self):
         self.tmpdir = tempfile.mkdtemp(prefix="test-deactivate-")
@@ -398,7 +394,7 @@ class TestSkillStateInitializerDeactivation:
     def teardown_method(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
         # Clean up user-level state too
-        for f in ["appfix-state.json", "forge-state.json"]:
+        for f in ["appfix-state.json", "build-state.json"]:
             p = Path.home() / ".claude" / f
             if p.exists():
                 try:
@@ -423,15 +419,15 @@ class TestSkillStateInitializerDeactivation:
         )
 
     def test_forge_off_deletes_state(self):
-        """'/forge off' should delete forge state files."""
-        make_state_dir(self.tmpdir, {"iteration": 1}, filename="forge-state.json")
+        """'/build off' should delete build state files."""
+        make_state_dir(self.tmpdir, {"iteration": 1}, filename="build-state.json")
 
         run_hook(
             "skill-state-initializer.py",
-            {"cwd": self.tmpdir, "prompt": "/forge off", "session_id": "test-sess"},
+            {"cwd": self.tmpdir, "prompt": "/build off", "session_id": "test-sess"},
         )
 
-        state_path = Path(self.tmpdir) / ".claude" / "forge-state.json"
+        state_path = Path(self.tmpdir) / ".claude" / "build-state.json"
         assert not state_path.exists()
 
     def test_stop_autonomous_mode_deletes_state(self):
@@ -460,7 +456,7 @@ class TestSkillStateInitializerActivation:
     def teardown_method(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
         # Clean up user-level state
-        for f in ["appfix-state.json", "forge-state.json"]:
+        for f in ["appfix-state.json", "build-state.json"]:
             p = Path.home() / ".claude" / f
             if p.exists():
                 try:
@@ -646,7 +642,7 @@ class TestStickySessionWorkflow:
         )
         # Import functions for direct testing
         sys.path.insert(0, str(HOOKS_DIR))
-        from _common import (
+        from _state import (
             cleanup_checkpoint_only,
             reset_state_for_next_task,
             is_autonomous_mode_active,
@@ -724,11 +720,8 @@ class TestCornerCases:
     def setup_method(self):
         self.tmpdir = tempfile.mkdtemp(prefix="test-corner-")
         sys.path.insert(0, str(HOOKS_DIR))
-        from _common import (
-            is_state_expired,
-            is_state_for_session,
-            is_autonomous_mode_active,
-        )
+        from _common import is_state_expired, is_state_for_session
+        from _state import is_autonomous_mode_active
 
         self.is_state_expired = is_state_expired
         self.is_state_for_session = is_state_for_session
@@ -745,15 +738,15 @@ class TestCornerCases:
 
         # Create expired forge state
         expired_state = {"session_id": "sess-1", "last_activity_at": hours_ago_iso(10)}
-        make_state_dir(self.tmpdir, expired_state, filename="forge-state.json")
+        make_state_dir(self.tmpdir, expired_state, filename="build-state.json")
 
-        from _common import cleanup_expired_state
+        from _state import cleanup_expired_state
 
         cleanup_expired_state(self.tmpdir, "sess-1")
 
         # Only forge should be deleted
         appfix_path = Path(self.tmpdir) / ".claude" / "appfix-state.json"
-        forge_path = Path(self.tmpdir) / ".claude" / "forge-state.json"
+        forge_path = Path(self.tmpdir) / ".claude" / "build-state.json"
         assert appfix_path.exists()
         assert not forge_path.exists()
 
@@ -786,7 +779,7 @@ class TestCornerCases:
 
         # This tests that the functions handle file I/O correctly
         # (not true concurrency, but basic robustness)
-        from _common import reset_state_for_next_task
+        from _state import reset_state_for_next_task
 
         result = reset_state_for_next_task(self.tmpdir)
         assert result is True

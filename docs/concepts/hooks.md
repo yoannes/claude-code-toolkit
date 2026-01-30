@@ -275,7 +275,7 @@ Called automatically at session start by `session-snapshot.py`.
 
 **File**: `~/.claude/hooks/skill-state-initializer.py`
 
-**Purpose**: Creates state files for autonomous execution skills (`/appfix`, `/godo`) immediately when the user's prompt matches trigger patterns. This ensures auto-approval hooks activate from the first tool call.
+**Purpose**: Creates state files for autonomous execution skills (`/appfix`, `/build`) immediately when the user's prompt matches trigger patterns. This ensures auto-approval hooks activate from the first tool call.
 
 **Coordinator Detection**:
 
@@ -296,14 +296,14 @@ Recognized patterns:
 - `release to production`
 - `/deploy-pipeline ... prod`
 
-Example: `/godo deploy to prod` creates state with:
+Example: `/build deploy to prod` creates state with:
 ```json
 {
   "allowed_prompts": [{"tool": "Bash", "prompt": "deploy to production"}]
 }
 ```
 
-**State file fields** (`.claude/appfix-state.json` or `.claude/godo-state.json`):
+**State file fields** (`.claude/appfix-state.json` or `.claude/build-state.json`):
 ```json
 {
   "iteration": 1,
@@ -453,7 +453,7 @@ THEN your edit will be allowed.
 **How it works**:
 1. Receives PostToolUse event with `tool_name: "ExitPlanMode"`
 2. Extracts `allowedPrompts` from `tool_input` (if present)
-3. Checks if godo or appfix state file exists (`.claude/godo-state.json` or `.claude/appfix-state.json`)
+3. Checks if godo or appfix state file exists (`.claude/build-state.json` or `.claude/appfix-state.json`)
 4. Updates the state file with `plan_mode_completed: true` and `allowed_prompts`
 5. The plan-mode-enforcer hook (PreToolUse) then allows Edit/Write tools
 6. Other hooks (e.g., deploy-enforcer) can check `allowed_prompts` for permission bypasses
@@ -887,7 +887,7 @@ cd prompts && bash scripts/test-e2e-tmux.sh --observe
 **Pytest tests** (`config/hooks/tests/test_plan_mode_hooks.py`) — 24 tests covering:
 - `TestPlanModeEnforcer`: `.claude/` artifact exemption, code blocking, plan completion, iteration skip, godo state
 - `TestPlanModeTracker`: State updates on ExitPlanMode, field preservation, no-stdout behavior
-- `TestSkillStateInitializer`: `/appfix` and `/godo` state creation, natural language triggers
+- `TestSkillStateInitializer`: `/appfix` and `/build` state creation, natural language triggers
 - `TestHookChain`: Full appfix lifecycle (init → enforce → track → allow), auto-approval
 
 **Headless E2E** (`scripts/test-e2e-headless.sh`) — 5 tests using `claude -p --dangerously-skip-permissions`:
@@ -994,12 +994,12 @@ Stop hook error: JSON validation failed
 
 ## Autonomous Execution Hook System
 
-The `/godo` and `/appfix` skills use a coordinated set of hooks to enforce fully autonomous execution. These hooks activate when autonomous mode is detected via:
+The `/build` and `/appfix` skills use a coordinated set of hooks to enforce fully autonomous execution. These hooks activate when autonomous mode is detected via:
 
-1. **State file existence** (primary): `.claude/godo-state.json` or `.claude/appfix-state.json` exists in the project
+1. **State file existence** (primary): `.claude/build-state.json` or `.claude/appfix-state.json` exists in the project
 2. **Environment variable** (legacy): `GODO_ACTIVE=true` or `APPFIX_ACTIVE=true`
 
-The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state files automatically when `/godo` or `/appfix` is invoked. State files include a `started_at` timestamp and expire after a configurable TTL (checked by `is_state_expired()` in `_common.py`).
+The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state files automatically when `/build` or `/appfix` is invoked. State files include a `started_at` timestamp and expire after a configurable TTL (checked by `is_state_expired()` in `_common.py`).
 
 ### Architecture
 
@@ -1010,7 +1010,7 @@ The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state fil
 │                                                                             │
 │  UserPromptSubmit                                                           │
 │  └─→ skill-state-initializer.py                                             │
-│      └─→ Creates .claude/godo-state.json or .claude/appfix-state.json      │
+│      └─→ Creates .claude/build-state.json or .claude/appfix-state.json      │
 │      └─→ Sets started_at timestamp for TTL expiry                          │
 │                                                                             │
 │  PreToolUse(Edit/Write)                                                     │
@@ -1238,7 +1238,7 @@ Permission patterns recognized: `prod`, `production`, `deploy to prod`, `push to
 
 **bash-version-tracker.py** (PostToolUse/Bash): Detects version-changing commands (git commit, az CLI, gh workflow run) and invalidates stale checkpoint fields. Prevents the scenario where code changes go undetected.
 
-**doc-updater-async.py** (PostToolUse/Bash): Detects git commits during appfix/godo sessions and creates a task file for async documentation updates. Suggests spawning a background Sonnet agent to update relevant docs based on the commit diff. Uses /heavy for multi-perspective analysis of architectural changes.
+**doc-updater-async.py** (PostToolUse/Bash): Detects git commits during appfix/build sessions and creates a task file for async documentation updates. Suggests spawning a background Sonnet agent to update relevant docs based on the commit diff. Uses /heavy for multi-perspective analysis of architectural changes.
 
 **checkpoint-invalidator.py** (PostToolUse/Edit/Write): Proactively resets stale checkpoint flags when code is edited, before the stop hook checks. Prevents false checkpoint claims.
 
@@ -1266,13 +1266,13 @@ echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/
 
 # Test deploy-enforcer blocking subagent deploy
 mkdir -p /tmp/test-project/.claude
-echo '{"iteration": 1, "started_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "coordinator": false}' > /tmp/test-project/.claude/godo-state.json
+echo '{"iteration": 1, "started_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "coordinator": false}' > /tmp/test-project/.claude/build-state.json
 echo '{"tool_name":"Bash","tool_input":{"command":"gh workflow run deploy.yml"},"cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/deploy-enforcer.py
 # Expected: JSON with permissionDecision: "deny"
 
 # Test plan-mode-enforcer blocking Edit before plan mode
 mkdir -p /tmp/test-project/.claude
-echo '{"iteration": 1, "started_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "plan_mode_completed": false}' > /tmp/test-project/.claude/godo-state.json
+echo '{"iteration": 1, "started_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "plan_mode_completed": false}' > /tmp/test-project/.claude/build-state.json
 echo '{"tool_name":"Edit","tool_input":{"file_path":"/tmp/test.py"},"cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/plan-mode-enforcer.py
 # Expected: JSON with permissionDecision: "deny"
 

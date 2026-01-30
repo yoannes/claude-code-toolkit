@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook to enforce Lite Heavy execution before ExitPlanMode for /forge.
+PreToolUse hook to enforce Lite Heavy execution before ExitPlanMode for /build.
 
 Blocks ExitPlanMode until ALL 4 agents have been launched:
 1. heavy/SKILL.md has been read
@@ -27,12 +27,13 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import get_autonomous_state, log_debug
+from _common import log_debug
+from _state import get_autonomous_state
 
 
 BLOCK_MESSAGE = """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║  ⚠️  LITE HEAVY PLANNING REQUIRED - /forge                                    ║
+║  ⚠️  LITE HEAVY PLANNING REQUIRED - /build                                    ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
 Before exiting plan mode, you MUST launch ALL 4 Opus agents.
@@ -82,9 +83,9 @@ def main():
     if tool_name != "ExitPlanMode":
         sys.exit(0)
 
-    # Only process if forge is active
+    # Only process if build is active
     state, state_type = get_autonomous_state(cwd, session_id)
-    if state_type != "forge":
+    if state_type != "build":
         sys.exit(0)
 
     # Only enforce on first iteration

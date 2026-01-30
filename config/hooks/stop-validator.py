@@ -37,11 +37,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _common import (
     log_debug,
     get_diff_hash,
-    load_checkpoint,
+)
+from _checkpoint import load_checkpoint
+from _state import (
     cleanup_checkpoint_only,
     reset_state_for_next_task,
     is_autonomous_mode_active,
-    _scoped_filename,
 )
 from _sv_validators import (
     validate_checkpoint,
@@ -68,10 +69,7 @@ def session_made_code_changes(cwd: str) -> bool:
 
     Falls back to git diff check if no snapshot exists (old session format).
     """
-    # Check PID-scoped snapshot first, fall back to legacy
-    snapshot_path = Path(cwd) / ".claude" / _scoped_filename("session-snapshot.json")
-    if not snapshot_path.exists():
-        snapshot_path = Path(cwd) / ".claude" / "session-snapshot.json"
+    snapshot_path = Path(cwd) / ".claude" / "session-snapshot.json"
     if not snapshot_path.exists():
         # No snapshot = old session format, fall back to git diff check
         return has_code_changes(get_git_diff_files())
@@ -99,7 +97,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     """Determine if this session requires a completion checkpoint.
 
     Checkpoint required when:
-    - Autonomous mode is active (forge-state.json or appfix-state.json exists)
+    - Autonomous mode is active (build-state.json or appfix-state.json exists)
     - THIS SESSION made code changes (diff hash changed since session start)
     - A plan file exists for this project
 
@@ -108,7 +106,7 @@ def requires_checkpoint(cwd: str, modified_files: list[str]) -> bool:
     - Sessions with only pre-existing uncommitted changes from previous sessions
     - Simple file reads, documentation queries
     """
-    # CRITICAL: If autonomous mode active (godo or appfix), checkpoint is ALWAYS required
+    # CRITICAL: If autonomous mode active (build or appfix), checkpoint is ALWAYS required
     # This ensures all changes are validated before stopping
     if is_autonomous_mode_active(cwd):
         return True

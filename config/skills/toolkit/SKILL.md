@@ -1,11 +1,11 @@
 ---
 name: toolkit
-description: Claude Code Toolkit management, information, and CLAUDE.md optimization. Use when asked about "/toolkit", "how does the toolkit work", "update toolkit", "toolkit status", "auto-update", "how to install", "optimize CLAUDE.md", "improve CLAUDE.md", or "audit CLAUDE.md".
+description: Halt management, information, and CLAUDE.md optimization. Use when asked about "/toolkit", "how does the toolkit work", "update toolkit", "toolkit status", "auto-update", "how to install", "optimize CLAUDE.md", "improve CLAUDE.md", or "audit CLAUDE.md".
 ---
 
-# Claude Code Toolkit
+# Halt
 
-This skill explains how the Claude Code Toolkit works, including installation, auto-update, and manual management.
+This skill explains how the Halt works, including installation, auto-update, and manual management.
 
 ## Triggers
 
@@ -20,17 +20,17 @@ This skill explains how the Claude Code Toolkit works, including installation, a
 
 ## What is the Toolkit?
 
-The Claude Code Toolkit extends Claude Code with:
+The Halt extends Claude Code with:
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| **Commands** | Slash-invoked workflows (`/appfix`, `/godo`, `/qa`) | `~/.claude/commands/` |
+| **Commands** | Slash-invoked workflows (`/appfix`, `/build`, `/qa`) | `~/.claude/commands/` |
 | **Skills** | Automatic domain expertise injection | `~/.claude/skills/` |
 | **Hooks** | Lifecycle event handlers (auto-approval, stop validation) | `~/.claude/hooks/` |
 
 ### Key Capabilities
 
-- **Autonomous execution** (`/godo`, `/appfix`) - Complete tasks without asking for confirmation
+- **Autonomous execution** (`/build`, `/appfix`) - Complete tasks without asking for confirmation
 - **Completion checkpoint** - Stop hook validates that work is actually done
 - **Auto-approval** - Tools auto-approved during autonomous workflows
 - **Auto-update** - Toolkit updates itself on session start
@@ -55,8 +55,8 @@ The toolkit uses **symlinks** to connect `~/.claude/` to the toolkit repository:
 ### Installation Command
 
 ```bash
-git clone https://github.com/Motium-AI/claude-code-toolkit.git ~/claude-code-toolkit
-cd ~/claude-code-toolkit && ./scripts/install.sh
+git clone https://github.com/Motium-AI/halt.git ~/halt
+cd ~/halt && ./scripts/install.sh
 ```
 
 **After installation, restart Claude Code** - hooks are captured at session startup.
@@ -108,7 +108,7 @@ export CLAUDE_TOOLKIT_AUTO_UPDATE=false
 ### Check for Updates
 
 ```bash
-cd ~/claude-code-toolkit  # or wherever you cloned it
+cd ~/halt  # or wherever you cloned it
 git fetch origin main
 git log HEAD..origin/main --oneline
 ```
@@ -116,7 +116,7 @@ git log HEAD..origin/main --oneline
 ### Apply Updates
 
 ```bash
-cd ~/claude-code-toolkit
+cd ~/halt
 git pull
 ```
 
@@ -125,7 +125,7 @@ git pull
 ### Check Current Version
 
 ```bash
-cd ~/claude-code-toolkit
+cd ~/halt
 git log -1 --format="%h %s"
 ```
 
@@ -141,7 +141,7 @@ ls -la ~/.claude/commands
 ls -la ~/.claude/skills
 
 # Run verification
-~/claude-code-toolkit/scripts/install.sh --verify
+~/halt/scripts/install.sh --verify
 ```
 
 ### Check Update State
@@ -159,13 +159,13 @@ Fields:
 ### Diagnose Issues
 
 ```bash
-~/claude-code-toolkit/scripts/doctor.sh
+~/halt/scripts/doctor.sh
 ```
 
 ## Uninstall
 
 ```bash
-~/claude-code-toolkit/scripts/install.sh --uninstall
+~/halt/scripts/install.sh --uninstall
 ```
 
 This removes symlinks but preserves `~/.claude/` directory (state files, plans, memories).
@@ -184,7 +184,7 @@ This removes symlinks but preserves `~/.claude/` directory (state files, plans, 
 
 **Fix**: Manual update:
 ```bash
-cd ~/claude-code-toolkit
+cd ~/halt
 git fetch origin main
 git reset --hard origin/main  # Warning: discards local changes
 ```
@@ -195,7 +195,7 @@ git reset --hard origin/main  # Warning: discards local changes
 
 **Fix**:
 ```bash
-chmod +x ~/claude-code-toolkit/config/hooks/*.py
+chmod +x ~/halt/config/hooks/*.py
 ```
 
 ### Symlinks Broken
@@ -204,7 +204,7 @@ chmod +x ~/claude-code-toolkit/config/hooks/*.py
 
 **Fix**: Re-run installer:
 ```bash
-cd ~/claude-code-toolkit && ./scripts/install.sh --force
+cd ~/halt && ./scripts/install.sh --force
 ```
 
 ## CLAUDE.md Optimization
@@ -261,7 +261,7 @@ See `references/claude-md-optimizer.md` for the complete rubric with:
 
 | Command | Purpose |
 |---------|---------|
-| `/godo` | Autonomous task execution |
+| `/build` | Autonomous task execution |
 | `/appfix` | Autonomous debugging |
 | `/qa` | Codebase architecture audit |
 | `/webtest` | Browser automation testing |

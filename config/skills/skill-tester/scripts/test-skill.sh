@@ -11,7 +11,7 @@
 #
 # Examples:
 #   bash test-skill.sh /heavy "Redis vs PostgreSQL?"
-#   bash test-skill.sh /godo "Create hello.py"
+#   bash test-skill.sh /build "Create hello.py"
 #   bash test-skill.sh /frontend-design "Create a button"
 #
 # =============================================================================
@@ -66,7 +66,7 @@ for arg in "$@"; do
             echo ""
             echo "Examples:"
             echo "  $0 /heavy \"Redis vs PostgreSQL?\""
-            echo "  $0 --model=sonnet /godo \"Create hello.py\""
+            echo "  $0 --model=sonnet /build \"Create hello.py\""
             exit 0
             ;;
         -*) echo "Unknown option: $arg"; exit 1 ;;

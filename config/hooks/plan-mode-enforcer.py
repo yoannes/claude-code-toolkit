@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook to enforce plan mode on first iteration of forge/appfix.
+PreToolUse hook to enforce plan mode on first iteration of build/repair.
 
 This hook BLOCKS Edit/Write tools until plan mode has been completed (indicated
 by plan_mode_completed: true in the state file). This ensures Claude follows
@@ -26,7 +26,8 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import get_autonomous_state, is_autonomous_mode_active, log_debug
+from _common import log_debug
+from _state import get_autonomous_state, is_autonomous_mode_active
 
 
 BLOCK_MESSAGE = """
@@ -34,7 +35,7 @@ BLOCK_MESSAGE = """
 ║  ⚠️  PLAN MODE REQUIRED - FIRST ITERATION                                     ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
-This is the first iteration of an autonomous skill (/forge or /repair).
+This is the first iteration of an autonomous skill (/build or /repair).
 You MUST explore the codebase and create a plan before making code changes.
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -102,7 +103,7 @@ def main():
 
     # Always allow writes to .claude/ workflow artifacts (checkpoints, validation
     # tests, state files, web smoke results). These are NOT code changes — they are
-    # internal appfix/godo state that must be writable at any point in the workflow.
+    # internal repair/build state that must be writable at any point in the workflow.
     if is_workflow_artifact(file_path):
         log_debug(
             f"Allowing {tool_name} to .claude/ workflow artifact",
@@ -111,10 +112,10 @@ def main():
         )
         sys.exit(0)  # Allow .claude/ writes
 
-    # Only process if autonomous mode is active (godo or appfix)
+    # Only process if autonomous mode is active (build or repair)
     # Pass session_id to enable cross-directory trust for same session
     if not is_autonomous_mode_active(cwd, session_id):
-        sys.exit(0)  # Not in godo/appfix mode, no enforcement
+        sys.exit(0)  # Not in build/repair mode, no enforcement
 
     # Check if plan mode has been completed
     state, state_type = get_autonomous_state(cwd, session_id)

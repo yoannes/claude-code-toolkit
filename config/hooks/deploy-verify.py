@@ -4,7 +4,7 @@ GitHub Actions Deployment Verification Helper
 
 Runs gh CLI commands to verify deployment status and produces artifacts that
 the stop hook validates. This is NOT a hook itself - it's a helper script
-called by appfix/godo workflows.
+called by repair/build workflows.
 
 Usage:
     python3 deploy-verify.py --workflow deploy.yml

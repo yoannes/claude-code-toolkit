@@ -2,13 +2,13 @@
 """
 PostToolUse Hook - Async Documentation Updater
 
-Fires after Bash tool to detect git commits during appfix/godo sessions.
+Fires after Bash tool to detect git commits during repair/build sessions.
 When a commit is detected, spawns an async Sonnet agent to update relevant
 documentation based on the diff.
 
 This hook is designed to:
 1. Detect git commit commands in Bash tool output
-2. Only fire during autonomous mode (appfix/godo)
+2. Only fire during autonomous mode (repair/build)
 3. Launch an async agent with the /heavy skill for multi-perspective doc analysis
 4. Allow the main session to continue while docs are updated in background
 
@@ -27,10 +27,8 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import (
-    is_autonomous_mode_active,
-    log_debug,
-)
+from _common import log_debug
+from _state import is_autonomous_mode_active
 
 
 # Patterns that indicate a commit was made
@@ -154,7 +152,7 @@ def create_doc_update_task_file(cwd: str, commit_message: str, diff_content: str
         "instructions": f"""
 DOCUMENTATION UPDATE TASK
 
-A commit was just made in an appfix/godo session. Your job is to:
+A commit was just made in an repair/build session. Your job is to:
 
 1. Analyze the diff to understand what changed
 2. Determine which documentation files need updating
@@ -239,7 +237,7 @@ def main():
             "additionalContext": f"""
 ASYNC DOC UPDATE TASK CREATED
 
-A commit was detected during this appfix/godo session.
+A commit was detected during this repair/build session.
 Task file: {task_file}
 
 After completing the fix-verify loop, you may spawn a background agent to update docs:

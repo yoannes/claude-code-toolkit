@@ -307,6 +307,6 @@ fi
 
 ## Support
 
-- Report issues: https://github.com/Motium-AI/claude-code-toolkit/issues
+- Report issues: https://github.com/Motium-AI/halt/issues
 - Test suite: `~/.claude/hooks/test-azure-guard.sh`
 - Hook source: `~/.claude/hooks/azure-command-guard.sh`

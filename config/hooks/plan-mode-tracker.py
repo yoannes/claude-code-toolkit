@@ -26,9 +26,9 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import (
+from _common import log_debug
+from _state import (
     get_autonomous_state,
-    log_debug,
     update_state_file,
 )
 

@@ -10,7 +10,7 @@
 #   ./propagate-changes.sh <source-dir> <sandbox-project-dir>
 #
 # Example:
-#   ./propagate-changes.sh /path/to/claude-code-toolkit /tmp/claude-sandboxes/sandbox-xxx/project
+#   ./propagate-changes.sh /path/to/halt /tmp/claude-sandboxes/sandbox-xxx/project
 #
 # =============================================================================
 
@@ -29,7 +29,7 @@ STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
 ALL_FILES=$(echo -e "$MODIFIED_FILES\n$STAGED_FILES" | sort -u | grep -v '^$' || true)
 
 if [[ -z "$ALL_FILES" ]]; then
-    echo "No modified files to propagate"
+    echo "No modified files to propagate" >&2
     exit 0
 fi
 
@@ -40,15 +40,15 @@ echo "$ALL_FILES" | while read -r file; do
         mkdir -p "$(dirname "$SANDBOX_PROJECT/$file")"
         # Copy the file
         cp "$SOURCE_DIR/$file" "$SANDBOX_PROJECT/$file"
-        echo "Propagated: $file"
+        echo "Propagated: $file" >&2
         COUNT=$((COUNT + 1))
     elif [[ -n "$file" ]] && [[ ! -f "$SOURCE_DIR/$file" ]]; then
         # File was deleted - remove from sandbox if exists
         if [[ -f "$SANDBOX_PROJECT/$file" ]]; then
             rm "$SANDBOX_PROJECT/$file"
-            echo "Removed (deleted): $file"
+            echo "Removed (deleted): $file" >&2
         fi
     fi
 done
 
-echo "Done propagating changes"
+echo "Done propagating changes" >&2

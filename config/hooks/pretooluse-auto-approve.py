@@ -25,10 +25,12 @@ from pathlib import Path
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (
-    is_autonomous_mode_active,
-    get_autonomous_state,
     is_state_expired,
     log_debug,
+)
+from _state import (
+    is_autonomous_mode_active,
+    get_autonomous_state,
 )
 
 # Invocation log for debugging
@@ -77,7 +79,7 @@ def main():
 
     log_invocation(f"Hook invoked for tool={tool_name}", cwd=cwd, tool_name=tool_name)
 
-    # Only process if autonomous mode is active (godo or appfix)
+    # Only process if autonomous mode is active (build or repair)
     # Pass session_id to enable cross-directory trust for same session
     if not is_autonomous_mode_active(cwd, session_id):
         log_debug(

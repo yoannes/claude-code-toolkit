@@ -10,7 +10,7 @@ Three approaches for testing web applications:
 
 | Approach | When to Use | Capabilities |
 |----------|-------------|--------------|
-| **Surf CLI** | Autonomous mode (appfix/godo), artifact generation | Deterministic, produces stop-hook-compatible artifacts |
+| **Surf CLI** | Autonomous mode (repair/build), artifact generation | Deterministic, produces stop-hook-compatible artifacts |
 | **Chrome Integration** | Interactive testing, debugging, authenticated apps | Real browser, login state, console/network access, GIF recording |
 | **Playwright Scripts** | CI/CD, headless, programmatic automation | Scripted, reproducible, no GUI required |
 
@@ -18,7 +18,7 @@ Three approaches for testing web applications:
 
 ```
 User task → Is Autonomous Mode active?
-    │       (check: ls .claude/appfix-state.json .claude/godo-state.json 2>/dev/null)
+    │       (check: ls .claude/appfix-state.json .claude/build-state.json 2>/dev/null)
     │
     ├─ Yes (Autonomous Mode) → Is Surf CLI installed?
     │       │                  (check: which surf)
@@ -50,7 +50,7 @@ User task → Is Autonomous Mode active?
                     └─ Dynamic app? → Use with_server.py + Playwright script
 ```
 
-## Autonomous Mode (appfix/godo)
+## Autonomous Mode (repair/build)
 
 When autonomous mode is active, the stop hook requires proof of web testing via `.claude/web-smoke/summary.json`.
 
@@ -58,7 +58,7 @@ When autonomous mode is active, the stop hook requires proof of web testing via 
 
 ```bash
 # Check for autonomous mode state files
-ls .claude/appfix-state.json .claude/godo-state.json 2>/dev/null && echo "AUTONOMOUS MODE"
+ls .claude/appfix-state.json .claude/build-state.json 2>/dev/null && echo "AUTONOMOUS MODE"
 ```
 
 ### Surf CLI Workflow (Preferred)

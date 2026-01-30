@@ -2,7 +2,7 @@
 """
 PostToolUse hook for Skill tool - reminds Claude to continue autonomous workflows.
 
-When appfix/godo mode is active and Claude invokes a skill (like /heavy),
+When appfix/build mode is active and Claude invokes a skill (like /heavy),
 this hook fires after the skill completes to remind Claude that it's still
 in an autonomous fix-verify loop and should continue.
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import is_autonomous_mode_active, is_appfix_active, is_godo_active
+from _state import is_autonomous_mode_active, is_appfix_active, is_build_active
 
 
 def main():
@@ -41,8 +41,8 @@ def main():
     if is_appfix_active(cwd):
         mode_name = "APPFIX"
         loop_type = "fix-verify"
-    elif is_godo_active(cwd):
-        mode_name = "GODO"
+    elif is_build_active(cwd):
+        mode_name = "BUILD"
         loop_type = "task execution"
     else:
         sys.exit(0)

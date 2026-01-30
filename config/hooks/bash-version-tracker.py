@@ -22,9 +22,8 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import (
-    get_code_version,
-    get_worktree_info,
+from _common import get_code_version, get_worktree_info
+from _checkpoint import (
     invalidate_stale_fields,
     load_checkpoint,
     save_checkpoint,

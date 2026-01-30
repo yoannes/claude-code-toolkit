@@ -82,9 +82,21 @@ fi
 # EXECUTE: Run Claude with test prompt
 # =============================================================================
 
-START_TIME=$(date +%s%3N)
+# macOS date doesn't support %3N, use python3 for millisecond precision
+_millis() { python3 -c "import time; print(int(time.time()*1000))"; }
+START_TIME=$(_millis)
 STDOUT_FILE="$SANDBOX_ROOT/test-stdout.log"
 STDERR_FILE="$SANDBOX_ROOT/test-stderr.log"
+
+# Determine timeout command (macOS uses gtimeout from GNU coreutils)
+TIMEOUT_CMD=""
+if command -v timeout &>/dev/null; then
+    TIMEOUT_CMD="timeout $TIMEOUT"
+elif command -v gtimeout &>/dev/null; then
+    TIMEOUT_CMD="gtimeout $TIMEOUT"
+else
+    echo "  WARNING: No timeout command found, running without timeout" >&2
+fi
 
 # Run Claude in sandbox environment
 set +e
@@ -93,7 +105,7 @@ env HOME="$FAKE_HOME" \
     SANDBOX_MODE=true \
     SANDBOX_ID="$SANDBOX_ID" \
     SANDBOX_DIR="$SANDBOX_ROOT" \
-    timeout "$TIMEOUT" claude -p "$PROMPT" \
+    $TIMEOUT_CMD claude -p "$PROMPT" \
         --dangerously-skip-permissions \
         --no-session-persistence \
         --output-format json \
@@ -103,7 +115,7 @@ env HOME="$FAKE_HOME" \
 EXIT_CODE=$?
 set -e
 
-END_TIME=$(date +%s%3N)
+END_TIME=$(_millis)
 DURATION_MS=$((END_TIME - START_TIME))
 
 echo "  Completed in ${DURATION_MS}ms (exit code: $EXIT_CODE)" >&2
@@ -141,6 +153,18 @@ for i in $(seq 0 $((ASSERTION_COUNT - 1))); do
             else
                 FAILED_ASSERTIONS=$(echo "$FAILED_ASSERTIONS" | jq ". + [{\"type\": \"$ASSERTION_TYPE\", \"path\": \"$FILEPATH\", \"reason\": \"File exists but should not\"}]")
                 echo "  [FAIL] file_not_exists: $FILEPATH" >&2
+            fi
+            ;;
+
+        file_contains)
+            FILEPATH=$(echo "$ASSERTION" | jq -r '.path')
+            PATTERN=$(echo "$ASSERTION" | jq -r '.pattern')
+            if [[ -f "$SANDBOX_PROJECT/$FILEPATH" ]] && grep -qE "$PATTERN" "$SANDBOX_PROJECT/$FILEPATH" 2>/dev/null; then
+                PASSED_COUNT=$((PASSED_COUNT + 1))
+                echo "  [PASS] file_contains: $FILEPATH =~ $PATTERN" >&2
+            else
+                FAILED_ASSERTIONS=$(echo "$FAILED_ASSERTIONS" | jq ". + [{\"type\": \"$ASSERTION_TYPE\", \"path\": \"$FILEPATH\", \"pattern\": \"$PATTERN\", \"reason\": \"File missing or pattern not found\"}]")
+                echo "  [FAIL] file_contains: $FILEPATH =~ $PATTERN" >&2
             fi
             ;;
 
@@ -204,8 +228,8 @@ else
     STATUS="failed"
 fi
 
-# Output result as JSON
-jq -n \
+# Output result as compact single-line JSON (required for tail -1 capture in run-all-tests.sh)
+jq -cn \
     --arg name "$TEST_CASE_NAME" \
     --arg description "$DESCRIPTION" \
     --arg status "$STATUS" \

@@ -11,7 +11,7 @@ description: Autonomous app debugging system. Checks environment health, diagnos
 
 Autonomous debugging skill that iterates until all services are healthy and verified in browser.
 
-> `/appfix` is a debugging specialization of `/forge`. It inherits the completion checkpoint
+> `/appfix` is a debugging specialization of `/build`. It inherits the completion checkpoint
 > architecture and adds debugging-specific phases (health checks, log collection, service topology).
 
 ## Triggers

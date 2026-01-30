@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _common import is_appfix_active
+from _state import is_appfix_active
 
 
 def main():

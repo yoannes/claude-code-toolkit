@@ -1,9 +1,9 @@
 ---
-name: forge
-description: Task-agnostic autonomous execution. Identifies any task and executes it through a complete fix-verify loop until done. Use when asked to "go do", "just do it", "execute this", "/forge", or "/godo".
+name: build
+description: Task-agnostic autonomous execution. Identifies any task and executes it through a complete fix-verify loop until done. Use when asked to "go do", "just do it", "execute this", "/build", "/forge" (legacy), or "/godo" (legacy).
 ---
 
-# Autonomous Task Execution (/forge)
+# Autonomous Task Execution (/build)
 
 Task-agnostic autonomous execution skill that iterates until the task is complete and verified.
 
@@ -109,8 +109,8 @@ TEST_PASSWORD=your-test-password
 
 ## Triggers
 
-- `/forge` (primary)
-- `/godo` (legacy alias)
+- `/build` (primary)
+- `/build` (was /forge, /godo)
 - "go do"
 - "just do it"
 - "execute this"
@@ -202,7 +202,7 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 0: ACTIVATION                                            │
-│     └─► Create .claude/forge-state.json (enables auto-approval) │
+│     └─► Create .claude/build-state.json (enables auto-approval) │
 │     └─► Identify task from user prompt                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  ╔═══════════════════════════════════════════════════════════╗  │
@@ -222,7 +222,7 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 ├─────────────────────────────────────────────────────────────────┤
 │  ╔═══════════════════════════════════════════════════════════╗  │
 │  ║  PHASE 1.75: HARNESS TEST (if in toolkit project)         ║  │
-│  ║     └─► Detect if cwd is claude-code-toolkit              ║  │
+│  ║     └─► Detect if cwd is halt              ║  │
 │  ║     └─► Check for modified hooks/skills/settings          ║  │
 │  ║     └─► Create sandbox, propagate changes                 ║  │
 │  ║     └─► Run test cases in isolated Claude session         ║  │
@@ -250,11 +250,11 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 
 ### State File (Automatic)
 
-**The state file is created automatically by the `skill-state-initializer.py` hook when you invoke `/forge` or `/godo`.**
+**The state file is created automatically by the `skill-state-initializer.py` hook when you invoke `/build` or `/godo`.**
 
-When you type `/forge`, `/godo`, "go do", "just do it", or similar triggers, the UserPromptSubmit hook immediately creates:
-- `.claude/forge-state.json` - Project-level state for iteration tracking
-- `~/.claude/forge-state.json` - User-level state for cross-repo detection
+When you type `/build`, `/godo`, "go do", "just do it", or similar triggers, the UserPromptSubmit hook immediately creates:
+- `.claude/build-state.json` - Project-level state for iteration tracking
+- `~/.claude/build-state.json` - User-level state for cross-repo detection
 
 This happens BEFORE Claude starts processing, ensuring auto-approval hooks are active from the first tool call.
 
@@ -265,7 +265,7 @@ This happens BEFORE Claude starts processing, ensuring auto-approval hooks are a
 
 ```bash
 # Only use this if the automatic hook didn't create the files
-mkdir -p .claude && cat > .claude/forge-state.json << 'EOF'
+mkdir -p .claude && cat > .claude/build-state.json << 'EOF'
 {
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "task": "user's task description",
@@ -278,7 +278,7 @@ mkdir -p .claude && cat > .claude/forge-state.json << 'EOF'
 }
 EOF
 
-mkdir -p ~/.claude && cat > ~/.claude/forge-state.json << 'EOF'
+mkdir -p ~/.claude && cat > ~/.claude/build-state.json << 'EOF'
 {
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "origin_project": "$(pwd)"
@@ -500,7 +500,7 @@ Use Edit tool for targeted changes. Keep changes focused on the task.
 
 ## Phase 1.75: Harness Test (Conditional)
 
-**This phase only runs when working on the claude-code-toolkit repository itself.**
+**This phase only runs when working on the halt repository itself.**
 
 When modifying hooks, skills, or settings, changes don't take effect in the current session (hooks are captured at startup). This phase tests those changes in an isolated sandbox with a fresh Claude session.
 
@@ -641,7 +641,7 @@ Update checkpoint and try to stop. If blocked, address the issues and try again.
 
 **Cleanup on completion**: Remove state files when done:
 ```bash
-rm -f ~/.claude/forge-state.json .claude/forge-state.json
+rm -f ~/.claude/build-state.json .claude/build-state.json
 ```
 
 ## Exit Conditions
@@ -663,7 +663,7 @@ rm -f ~/.claude/forge-state.json .claude/forge-state.json
 
 ## Comparison with /appfix
 
-| Aspect | /forge | /appfix |
+| Aspect | /build | /appfix |
 |--------|--------|---------|
 | Purpose | Any task | Debugging failures |
 | Lite Heavy planning | Yes (4 agents) | No |
@@ -677,7 +677,7 @@ rm -f ~/.claude/forge-state.json .claude/forge-state.json
 | Mobile verification | Maestro MCP | Maestro MCP |
 | Completion checkpoint | Same schema | Same schema |
 
-`/forge` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
+`/build` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
 
 Both skills now auto-detect mobile projects (via `app.json`, `eas.json`, `ios/`, `android/`) and require Maestro testing instead of browser testing.
 
@@ -783,7 +783,7 @@ COORDINATOR WORKFLOW:
 **How coordination state is detected:**
 - `skill-state-initializer.py` automatically detects worktree context
 - Sets `coordinator: false`, `parallel_mode: true` when in worktree
-- Subagents can check `.claude/appfix-state.json` or `.claude/forge-state.json`
+- Subagents can check `.claude/appfix-state.json` or `.claude/build-state.json`
 
 ### Garbage Collection for Stale Worktrees
 

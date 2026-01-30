@@ -4,7 +4,7 @@
   "type": "hook",
   "target": "config/hooks/plan-mode-enforcer.py",
   "setup": {
-    "state_file": "forge-state.json",
+    "state_file": "build-state.json",
     "state_content": {
       "iteration": 1,
       "plan_mode_completed": false,

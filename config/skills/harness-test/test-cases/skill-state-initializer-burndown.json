@@ -1,0 +1,21 @@
+{
+  "name": "skill-state-initializer-burndown",
+  "description": "Verify skill-state-initializer creates burndown-state.json when /burndown is invoked",
+  "type": "hook",
+  "target": "config/hooks/skill-state-initializer.py",
+  "setup": {},
+  "prompt": "/burndown Fix code slop in this project",
+  "assertions": [
+    {
+      "type": "file_exists",
+      "path": ".claude/burndown-state.json"
+    },
+    {
+      "type": "state_field",
+      "file": "burndown-state.json",
+      "field": "iteration",
+      "expected": "1"
+    }
+  ],
+  "timeout": 90
+}
