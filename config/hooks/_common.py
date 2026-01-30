@@ -637,8 +637,28 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
     deleted = []
     state_files = ["appfix-state.json", "godo-state.json"]
 
-    def _should_clean(state_path: Path) -> bool:
-        """Check if a state file should be cleaned up."""
+    def _should_clean_user_level(state_path: Path) -> bool:
+        """Check if a user-level state file should be cleaned up.
+
+        User-level state is ONLY cleaned based on TTL expiration.
+        We do NOT clean based on session_id mismatch because user-level state
+        is meant to persist across sessions for cross-directory autonomous mode.
+        """
+        try:
+            state = json.loads(state_path.read_text())
+        except (json.JSONDecodeError, IOError):
+            return True  # Corrupt file = clean up
+
+        # Only clean if expired (TTL-based)
+        return is_state_expired(state)
+
+    def _should_clean_project_level(state_path: Path) -> bool:
+        """Check if a project-level state file should be cleaned up.
+
+        Project-level state is cleaned if:
+        1. Expired (TTL-based), OR
+        2. Belongs to a different session (session_id mismatch)
+        """
         try:
             state = json.loads(state_path.read_text())
         except (json.JSONDecodeError, IOError):
@@ -654,11 +674,11 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
 
         return False
 
-    # 1. Clean user-level state
+    # 1. Clean user-level state (TTL-based only, preserves cross-session state)
     user_claude_dir = Path.home() / ".claude"
     for filename in state_files:
         user_state = user_claude_dir / filename
-        if user_state.exists() and _should_clean(user_state):
+        if user_state.exists() and _should_clean_user_level(user_state):
             try:
                 user_state.unlink()
                 deleted.append(str(user_state))
@@ -676,7 +696,7 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
             if claude_dir.exists():
                 for filename in state_files:
                     state_file = claude_dir / filename
-                    if state_file.exists() and _should_clean(state_file):
+                    if state_file.exists() and _should_clean_project_level(state_file):
                         try:
                             state_file.unlink()
                             deleted.append(str(state_file))
