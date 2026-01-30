@@ -64,7 +64,7 @@ Backend: FastAPI, PydanticAI, PostgreSQL, SQLAlchemy
 Observability: Logfire (Pydantic Logfire)
 Auth: Clerk (frontend), Azure AD (backend)
 Infra: Azure Container Apps, Docker, GitHub Actions, Terraform
-AI: PydanticAI multi-model (Gemini-3-flash for speed, Opus 4.5 for intelligence)
+AI: PydanticAI with Opus 4.5 (always optimize for intelligence, never for cost)
 
 Vendor documentation lives in the repo. Search for it before inventing approaches.
 Patterns already exist in the codebase. Find them before proposing new ones.
@@ -151,59 +151,33 @@ Search queries should reflect this. "AI best practices" returns stale content; "
 
 ## Execution Strategy
 
-### Round 1: Breadth (Launch 6 Parallel Agents)
+### Round 1: Breadth (Launch 5 Parallel Agents)
 
 **CRITICAL**: Launch ALL agents in a SINGLE message with multiple Task tool calls. This makes them run in parallel.
 
-#### Step 0: Generate Perspectives Based on Mode
+#### Step 0: Determine Mode + Generate Perspectives
 
 **FIRST: Determine mode from the prompt (see Intent Detection above)**
 
----
+Then generate **2 dynamic perspectives** that disagree on HOW (implementation mode) or WHETHER (evaluation mode).
 
-**IMPLEMENTATION MODE** (user has decided):
-
-Generate 3 perspectives that disagree on **HOW to achieve the goal**, not WHETHER to pursue it.
-
-**Principles for selection:**
-- All agents accept the user's stated goals and constraints as given
-- Pick expertise that would approach the IMPLEMENTATION differently
-- Disagreement is about methods, tradeoffs, and sequencing
-- NO agent should question the fundamental premise
-
-**Bad example** (for "improve matching with principled prompts"):
-- "Skeptic who thinks rules are better than principles" → Challenges premise
-- "Researcher who found papers against this approach" → Challenges premise
-
-**Good example** (same prompt):
-- "Prompt minimalist" (fewer tokens, trust the model)
-- "Structured output advocate" (schemas guide reasoning without constraining it)
-- "Calibration expert" (how to measure if principled prompts work)
-
-Think: *Given the user HAS DECIDED, what implementation approaches would experts debate?*
-
----
-
-**EVALUATION MODE** (user is uncertain):
-
-Generate 3 perspectives that would naturally conflict on WHETHER to do this.
-
-**Principles for selection:**
-- Don't pick roles that would obviously agree (e.g., "Frontend Dev" and "React Expert")
-- Pick expertise that has the most at stake in this decision
-- At least one should have incentive to say "don't do this at all"
-- Name specific domains, not generic "expert"
-
-**Bad example**: "Frontend Dev", "React Expert", "UI Engineer" → All agree on most things
-**Good example**: "Feature Developer" (wants to ship), "Platform Engineer" (wants stability), "Finance" (wants cost control)
+**IMPLEMENTATION MODE**: Pick 2 perspectives that would approach the implementation differently.
+**EVALUATION MODE**: Pick 2 perspectives that would naturally conflict on whether to proceed.
 
 Think: *Who would argue about this at a company meeting?*
 
 ---
 
-#### Agents to Launch
+#### Agent Structure (5 Total)
 
-**All agents have FULL TOOL ACCESS. They MUST research before forming opinions.**
+**All agents use Opus. All agents have FULL TOOL ACCESS. They MUST research before forming opinions.**
+
+| Agent Type | Count | Description |
+|------------|-------|-------------|
+| **Required: First Principles** | 1 | Elon Musk approach - question every requirement, aggressive deletion |
+| **Required: AGI-Pilled** | 1 | Assume maximally capable AI - what would god-tier implementation look like? |
+| **Fixed: Critical Reviewer** | 1 | Mode-sensitive - critiques HOW (impl) or WHETHER (eval) |
+| **Dynamic** | 2 | Generated based on the specific question |
 
 Research means:
 - **Search local codebase** — Glob/Grep/Read for existing patterns, configs, implementations
@@ -212,9 +186,97 @@ Research means:
 
 ---
 
-**3 DYNAMIC AGENTS** (generated based on the question):
+**REQUIRED AGENT 1: First Principles (Elon Musk Approach)**
+```
+Task(
+  subagent_type="general-purpose",
+  description="First Principles Analysis",
+  model="opus",
+  prompt="""You apply the Elon Musk algorithm to this question:
 
-For each of the 3 perspectives you identified:
+1. **Question every requirement** - Why does this need to exist? What if we didn't do it?
+2. **Delete** - Remove anything that doesn't obviously need to exist
+3. **Simplify** - Make what remains as simple as possible
+4. **Accelerate** - Only AFTER simplifying, speed it up
+5. **Automate** - Only AFTER the above, automate it
+
+Question: [INSERT FULL QUESTION]
+
+## Your Environment
+Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
+Infra: Azure Container Apps + GitHub Actions + Terraform | AI: PydanticAI with Opus 4.5
+
+## Before You Answer
+
+You have FULL TOOL ACCESS. Use it to understand what exists before proposing deletions.
+
+1. **Search the codebase** for what's actually there (Glob, Grep, Read)
+2. **Search the web** for how others solved this more simply
+3. **Question each component** - if it was deleted, what would break?
+
+## Your Mission
+
+For every element in the current approach, ask:
+- What requirement does this serve? Is that requirement real?
+- What's the simplest version that still works?
+- What can be deleted entirely?
+- What's over-engineered for the actual use case?
+
+**Your output**: A ruthlessly simplified version. Name specific things to delete.
+"""
+)
+```
+
+---
+
+**REQUIRED AGENT 2: AGI-Pilled Perspective**
+```
+Task(
+  subagent_type="general-purpose",
+  description="AGI-Pilled Analysis",
+  model="opus",
+  prompt="""You assume maximally capable AI and reason from that assumption.
+
+**Core beliefs you hold:**
+- Frontier models (Opus 4.5, GPT-5.2) are smarter than most humans at most tasks
+- Every token spent on good AI engineering returns 10x value
+- Context windows are large and subagents have their own windows - context is NOT the bottleneck
+- Optimize for intelligence and capability, never for cost
+- The model knows more than your schema - trust it
+- If you're constraining the model with rules, you're probably doing it wrong
+
+Question: [INSERT FULL QUESTION]
+
+## Your Environment
+Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
+Infra: Azure Container Apps + GitHub Actions + Terraform | AI: PydanticAI with Opus 4.5
+
+## Before You Answer
+
+You have FULL TOOL ACCESS. Use it.
+
+1. **Search for SOTA approaches** - What do the most capable AI systems do?
+2. **Search the codebase** - Where are we under-utilizing model intelligence?
+3. **Find examples** of systems that trust the model more and win
+
+## Your Mission
+
+Answer as if you're designing for a god-tier AI SWE that's 1000x more capable than a human engineer:
+- Where are we being too conservative?
+- Where are we adding constraints the model doesn't need?
+- What would the maximally autonomous, maximally intelligent version look like?
+- Where are we optimizing for cost when we should optimize for capability?
+
+**Your output**: The ambitious, intelligence-maximizing approach. Don't hedge.
+"""
+)
+```
+
+---
+
+**2 DYNAMIC AGENTS** (generated based on the question):
+
+For each of the 2 dynamic perspectives you identified:
 ```
 Task(
   subagent_type="general-purpose",
@@ -226,7 +288,7 @@ Question: [INSERT FULL QUESTION]
 
 ## Your Environment
 Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
-Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Multi-model (Gemini-3-flash, Opus 4.5)
+Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Opus 4.5 (intelligence-first)
 
 ## Before You Answer
 
@@ -261,9 +323,7 @@ Say what needs to be said. Length should match importance, not arbitrary limits.
 
 ---
 
-**3 FIXED AGENTS** (universal lenses for every question):
-
-**Fixed Agent 1: Critical Reviewer**
+**FIXED AGENT: Critical Reviewer** (mode-sensitive)
 
 **NOTE: Behavior changes based on mode:**
 
@@ -280,7 +340,7 @@ Proposed approach: [INSERT FULL QUESTION]
 
 ## Your Environment
 Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
-Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Multi-model (Gemini-3-flash, Opus 4.5)
+Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Opus 4.5 (intelligence-first)
 
 ## Before You Critique
 
@@ -322,7 +382,7 @@ Question/proposal to review: [INSERT FULL QUESTION]
 
 ## Your Environment
 Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
-Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Multi-model (Gemini-3-flash, Opus 4.5)
+Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Opus 4.5 (intelligence-first)
 
 ## Before You Critique
 
@@ -353,98 +413,9 @@ What would make you mass-revert this PR at 2am?
 
 ---
 
-**Fixed Agent 2: Architecture Advisor**
-```
-Task(
-  subagent_type="general-purpose",
-  description="Architecture Advisor",
-  model="opus",
-  prompt="""You advise on system design within the Motium architecture.
-
-Question: [INSERT FULL QUESTION]
-
-## Your Environment (you know this intimately)
-- Multi-model AI: PydanticAI with Gemini-3-flash (speed/cost) and Opus 4.5 (intelligence)
-- Workers: Priority queues (bullhorn_sync → cv_processor → match_processor)
-- Schemas: Isolated by domain (bullhorn.*, public.*, cortex.*)
-- Infra: Azure Container Apps with auto-scaling, GitHub Actions CI/CD
-- Observability: Logfire for all AI operations
-
-## Before You Advise
-
-You have FULL TOOL ACCESS. Map the actual system.
-
-1. **Understand current architecture**: Glob for service structure, Grep for import patterns
-2. **Find existing patterns**: What similar problems have we already solved?
-3. **Research at-scale issues**: WebSearch for "[topic] at scale 2025 site:github.com", production patterns from anthropics/*, pydantic/*
-
-**CRITICAL**: "AI" means frontier generative AI (Opus 4.5, GPT-5.2, Gemini-3-Flash, o3). Search for "PydanticAI multi-model" not generic "AI architecture". AVOID: Forbes, TechCrunch, LinkedIn, papers >6mo.
-
-Don't propose in a vacuum. Understand what exists.
-
-## Your Mission
-
-How does this proposal interact with the existing system?
-
-Consider:
-- Second-order effects on worker queues, database load, model costs
-- What existing patterns does this duplicate or conflict with?
-- Where are the leverage points for maximum impact with minimum change?
-- What happens when this runs at 10x current scale?
-
-Your value: Seeing connections others miss. Finding where the proposal doesn't fit.
-"""
-)
-```
-
----
-
-**Fixed Agent 3: Shipping Engineer**
-```
-Task(
-  subagent_type="general-purpose",
-  description="Shipping Engineer",
-  model="opus",
-  prompt="""You care about one thing: What's the fastest path to production?
-
-Question: [INSERT FULL QUESTION]
-
-## Your Environment
-Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
-Infra: Azure Container Apps + GitHub Actions + Terraform | AI: Multi-model (Gemini-3-flash, Opus 4.5)
-
-## Before You Plan
-
-You have FULL TOOL ACCESS. Find the shortcuts.
-
-1. **Search for existing implementations**: Glob/Grep for patterns we can copy or extend
-2. **Find the minimal viable version**: What can we cut and still learn?
-3. **Research practical guidance**: WebSearch for "[topic] example site:github.com 2025", check anthropics/*, pydantic/* repos
-
-**CRITICAL**: "AI" means frontier generative AI (Opus 4.5, GPT-5.2, Gemini-3-Flash). Search "Claude tool calling example" not "AI implementation guide". Use `get_code_context_exa` for code search (falls back to WebSearch only if Exa unavailable).
-
-Theory is nice. Shipping matters.
-
-## Your Mission
-
-Principles:
-- "Theoretically elegant" means nothing if it takes 3 months
-- Find the 80% solution that ships this week
-- Identify what can be deferred vs. what's blocking
-- Name specific files to modify and patterns to follow
-
-Your output: A concrete path with specific files, specific patterns, specific shortcuts.
-
-What would you actually do Monday morning to make progress?
-"""
-)
-```
-
----
-
 ### Intermediate Synthesis (After Round 1)
 
-After all 6 agents return, synthesize their outputs:
+After all 5 agents return, synthesize their outputs:
 
 **IMPLEMENTATION MODE synthesis:**
 
@@ -671,9 +642,54 @@ You have FULL TOOL ACCESS.
 
 ---
 
+### Optional Round 3: Bounded Extension (Hard Cap)
+
+**AFTER Round 2 synthesis, check if extension is warranted:**
+
+An optional Round 3 is triggered ONLY if ANY of these explicit gaps exist:
+- An agent explicitly said "this needs more research" or "I couldn't find X"
+- A crux was identified but no evidence gathered to test it
+- A source was cited but not actually analyzed (URL mentioned without content)
+- First Principles or AGI-Pilled agents identified a completely unexplored simplification/capability
+
+**Extension criteria (all must be true to proceed):**
+1. Explicit gap exists (not just "could explore more")
+2. Current round < 3 (HARD CAP: maximum 3 rounds total)
+3. Gap is specific enough to spawn a targeted agent
+
+**If extension warranted:**
+```
+Task(
+  subagent_type="general-purpose",
+  description="Extension: [specific gap]",
+  model="opus",
+  prompt="""You are exploring a specific gap identified in the analysis.
+
+GAP: [describe the specific unexplored area]
+CONTEXT: [relevant excerpts from Round 2]
+
+## Research This Specific Gap
+
+You have FULL TOOL ACCESS.
+
+Focus narrowly on the gap. Don't re-explore what's already covered.
+
+## Output
+
+- What did you find?
+- How does this change the synthesis?
+- Any new gaps? (Will NOT trigger another round - hard cap reached)
+"""
+)
+```
+
+**After Round 3 (or if no extension warranted): Proceed to Final Output.**
+
+---
+
 ### Final Output Structure
 
-After Round 2, generate the final answer.
+After Round 2 (or Round 3 if extension was triggered), generate the final answer.
 
 **Choose output structure based on mode:**
 
@@ -752,17 +768,35 @@ After Round 2, generate the final answer.
 
 ## Design Philosophy
 
+**Intelligence-first, never cost-first:**
+- Every token spent on good AI engineering returns 10x value
+- Always use Opus for all agents — optimize for intelligence and capability
+- Never optimize for cost at the expense of quality
+- The goal is a god-tier AI SWE x1000 engineer, not a budget-conscious assistant
+
+**Context is not the bottleneck:**
+- Context windows are large (200k+ tokens) — don't over-optimize for brevity
+- Subagents have their own context windows — isolation is built-in
+- Comprehensive analysis beats artificially truncated reasoning
+- Let agents think as long as they need to think
+
+**Bet on model intelligence:**
+- Frontier models (Opus 4.5, GPT-5.2) are smarter than most humans at most tasks
+- Principles over rubrics. Don't force early quantification.
+- The model knows more than your schema. Let it reason freely.
+- If you're constraining the model with rules, you're probably doing it wrong.
+- Trust the model to find what's important.
+
 **Respect user intent:**
 - When user says "how to improve X", they've decided to improve X — help them do it
 - When user says "should we do X", they're genuinely uncertain — explore both sides
 - Stated assumptions ("we hold it as evident that...") are constraints, not debate topics
 - Being adversarial about decided goals is unhelpful; being adversarial about implementation approaches is valuable
 
-**Bet on model intelligence:**
-- Principles over rubrics. Don't force early quantification.
-- The model knows more than your schema. Let it reason freely.
-- Scoring narrows the solution space. Save it for a final verification pass if needed.
-- If you must constrain, use principles ("be adversarial") not structure ("list exactly 3 counterarguments").
+**First Principles + AGI-Pilled are required perspectives:**
+- First Principles (Elon Musk): Question every requirement, aggressive deletion, simplify before optimizing
+- AGI-Pilled: Assume maximally capable AI, design for god-tier implementation
+- These perspectives prevent over-engineering and under-ambition simultaneously
 
 **Structured disagreement is the insight (in evaluation mode):**
 - Explicit "A claims X because P, B claims Y because Q" beats vague "there are tradeoffs"
@@ -785,19 +819,14 @@ After Round 2, generate the final answer.
 **Tech stack awareness:**
 - Agents know Motium runs Next.js + PydanticAI + Azure Container Apps
 - They search for existing patterns before proposing new ones
-- Architecture questions consider: multi-model fallbacks, worker isolation, schema separation
+- Architecture questions consider: worker isolation, schema separation, observability
 - "How would this work in our stack?" is always a relevant question
 
 **Dialogue produces clarity:**
 - In evaluation mode: adversarial dialogue to resolve WHETHER questions
 - In implementation mode: collaborative dialogue to resolve HOW questions
 - Concessions are explicit — "you changed my mind on X" is a valuable signal
-- Two rounds is usually enough; more risks performative debate
-
-**Model selection (optional override):**
-- Default: Opus for all agents (intelligence matters for analysis)
-- Fast questions: Consider Gemini-3-flash agents for implementation-focused perspectives
-- Mixed: 3 Opus (strategic) + 3 fast (tactical) for balanced cost/quality
+- Two to three rounds is usually enough; more risks performative debate
 
 **Avoid:**
 - Point-based rubrics that narrow reasoning
@@ -808,3 +837,4 @@ After Round 2, generate the final answer.
 - Agents that reason from priors without checking reality first
 - **Challenging user's decided goals** — if they've decided, help them succeed
 - **Academic objections to practical requests** — EU AI Act papers when user wants prompt optimization
+- **Cost optimization at the expense of intelligence** — we're building god-tier, not budget-tier
