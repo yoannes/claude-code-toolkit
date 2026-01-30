@@ -21,6 +21,7 @@ from _common import (
     get_fields_to_invalidate,
     save_checkpoint,
     is_appfix_active,
+    is_mobileappfix_active,
     is_autonomous_mode_active,
     VERSION_DEPENDENT_FIELDS,
 )
@@ -203,6 +204,92 @@ def validate_web_smoke_artifacts(cwd: str) -> tuple[bool, list[str]]:
         errors.append(
             "web_smoke: urls_tested is empty. You must verify actual URLs.\n"
             "Add URLs to test in service-topology.md under web_smoke_urls"
+        )
+        return False, errors
+
+    return True, []
+
+
+def validate_maestro_smoke_artifacts(cwd: str) -> tuple[bool, list[str]]:
+    """Check if Maestro smoke artifacts exist and pass conditions.
+
+    For mobileappfix mode, validates that Maestro E2E tests were run
+    and the results are fresh.
+
+    Returns (is_valid, list_of_errors)
+    """
+    errors = []
+    artifact_dir = (
+        Path(cwd) / ".claude" / "maestro-smoke" if cwd else Path(".claude/maestro-smoke")
+    )
+    summary_path = artifact_dir / "summary.json"
+    screenshots_dir = artifact_dir / "screenshots"
+
+    if not summary_path.exists():
+        errors.append(
+            "maestro_smoke: No summary.json found. Run Maestro MCP tests first.\n"
+            "Use mcp__maestro__run_flow() to execute test journeys, then create artifacts.\n"
+            "Required minimum: J2-returning-user-login.yaml + J3-main-app-navigation.yaml"
+        )
+        return False, errors
+
+    try:
+        summary = json.loads(summary_path.read_text())
+    except (json.JSONDecodeError, IOError) as e:
+        errors.append(f"maestro_smoke: Cannot parse summary.json: {e}")
+        return False, errors
+
+    # Check version freshness
+    current_version = get_code_version(cwd)
+    tested_version = summary.get("tested_at_version", "")
+    if (
+        tested_version
+        and current_version != "unknown"
+        and tested_version != current_version
+    ):
+        errors.append(
+            f"maestro_smoke: Artifacts are STALE - tested at version '{tested_version}', "
+            f"but code is now at '{current_version}'. Re-run Maestro tests."
+        )
+        return False, errors
+
+    # Check pass status
+    if not summary.get("passed", False):
+        failed_flows = summary.get("failed_flows", 0)
+        error_msg = summary.get("error_message", "Unknown error")
+        flows = summary.get("flows_executed", [])
+        failed_names = [f.get("name", "unknown") for f in flows if not f.get("passed", True)]
+        errors.append(
+            f"maestro_smoke: Verification FAILED - {failed_flows} flows failed\n"
+            f"  Failed flows: {failed_names}\n"
+            f"  Error: {error_msg}"
+        )
+        return False, errors
+
+    # Check minimum flows were tested
+    total_flows = summary.get("total_flows", 0)
+    if total_flows < 1:
+        errors.append(
+            "maestro_smoke: No flows executed. At least 1 journey required.\n"
+            "Recommended: J2-returning-user-login + J3-main-app-navigation"
+        )
+        return False, errors
+
+    # Check screenshots exist
+    if screenshots_dir.exists():
+        actual_screenshots = list(screenshots_dir.glob("*.png"))
+        if not actual_screenshots:
+            errors.append(
+                "maestro_smoke: screenshots/ directory exists but contains no .png files.\n"
+                "Screenshots prove the tests actually ran."
+            )
+            return False, errors
+
+    # Check flows_executed is populated
+    flows_executed = summary.get("flows_executed", [])
+    if not flows_executed:
+        errors.append(
+            "maestro_smoke: flows_executed is empty. You must run actual Maestro flows."
         )
         return False, errors
 
@@ -557,6 +644,89 @@ def validate_web_testing(
     return failures, checkpoint_modified
 
 
+def validate_mobile_testing(
+    checkpoint: dict, has_app_code: bool, cwd: str
+) -> tuple[list[str], bool]:
+    """Check mobile testing requirements for mobileappfix mode.
+
+    In mobileappfix mode, Maestro E2E verification is MANDATORY.
+    This validates:
+    1. maestro_tests_passed is true with current version
+    2. Maestro smoke artifacts exist and passed
+    3. MCP tools were used (maestro_mcp_used)
+
+    Returns (failures, checkpoint_modified)
+    """
+    failures = []
+    report = checkpoint.get("self_report", {})
+    checkpoint_modified = False
+
+    if not is_mobileappfix_active(cwd):
+        return failures, checkpoint_modified
+
+    # Check if code changes were made
+    code_changes_claimed = report.get("code_changes_made", False)
+    if not code_changes_claimed and not has_app_code:
+        return failures, checkpoint_modified
+
+    # CROSS-VALIDATION: If maestro_tests_passed is claimed TRUE, artifacts MUST exist
+    maestro_claimed = report.get("maestro_tests_passed", False)
+
+    if maestro_claimed:
+        artifact_valid, artifact_errors = validate_maestro_smoke_artifacts(cwd)
+        if not artifact_valid:
+            failures.append(
+                "maestro_tests_passed is TRUE but no valid Maestro artifacts exist.\n"
+                "Cannot claim Maestro tests passed without proof. Auto-resetting to FALSE."
+            )
+            report["maestro_tests_passed"] = False
+            report["maestro_tests_passed_at_version"] = ""
+            checkpoint_modified = True
+            failures.extend([f"  → {err}" for err in artifact_errors])
+
+    # Check maestro_mcp_used flag
+    mcp_used = report.get("maestro_mcp_used", False)
+    if not mcp_used:
+        failures.append(
+            "maestro_mcp_used is false - you must use Maestro MCP tools for testing.\n"
+            "Use mcp__maestro__run_flow(), mcp__maestro__hierarchy(), etc.\n"
+            "Bash 'maestro test' commands are NOT acceptable."
+        )
+
+    # Check full_journeys_validated flag
+    journeys_validated = report.get("full_journeys_validated", False)
+    if not journeys_validated:
+        failures.append(
+            "full_journeys_validated is false - single tests are NOT sufficient.\n"
+            "Must validate complete user journeys (minimum: J2 + J3)."
+        )
+
+    # If maestro_tests_passed not claimed, check artifacts
+    if not maestro_claimed:
+        artifact_valid, artifact_errors = validate_maestro_smoke_artifacts(cwd)
+        if artifact_valid:
+            # Auto-set from artifact evidence
+            report["maestro_tests_passed"] = True
+            report["maestro_tests_passed_at_version"] = get_code_version(cwd)
+            checkpoint_modified = True
+        else:
+            failures.append(
+                "MAESTRO VERIFICATION REQUIRED (Mobile Mode)\n"
+                "Run Maestro E2E tests via MCP and create artifacts in .claude/maestro-smoke/"
+            )
+            failures.extend([f"  → {err}" for err in artifact_errors])
+
+    # Check evidence fields
+    evidence = checkpoint.get("evidence", {})
+    flows_tested = evidence.get("maestro_flows_tested", [])
+    if report.get("maestro_tests_passed", False) and not flows_tested:
+        failures.append(
+            "maestro_tests_passed is true but evidence.maestro_flows_tested is empty."
+        )
+
+    return failures, checkpoint_modified
+
+
 # ============================================================================
 # Main Orchestrator
 # ============================================================================
@@ -589,16 +759,28 @@ def validate_checkpoint(
     has_frontend = has_frontend_changes(modified_files)
     failures.extend(validate_code_requirements(report, has_app_code, has_frontend))
 
-    # 4. Web testing requirements (autonomous mode)
+    # 4. Web testing requirements (autonomous mode - web apps only)
     has_infra = report.get("az_cli_changes_made", False)
-    web_failures, web_modified = validate_web_testing(
-        checkpoint, has_app_code, has_infra, cwd
-    )
-    failures.extend(web_failures)
-    if web_modified:
-        checkpoint_modified = True
+    
+    # Skip web testing for mobile mode - use Maestro instead
+    if not is_mobileappfix_active(cwd):
+        web_failures, web_modified = validate_web_testing(
+            checkpoint, has_app_code, has_infra, cwd
+        )
+        failures.extend(web_failures)
+        if web_modified:
+            checkpoint_modified = True
 
-    # 5. Fix-specific tests (warning only, not blocking)
+    # 5. Mobile testing requirements (mobileappfix mode)
+    if is_mobileappfix_active(cwd):
+        mobile_failures, mobile_modified = validate_mobile_testing(
+            checkpoint, has_app_code, cwd
+        )
+        failures.extend(mobile_failures)
+        if mobile_modified:
+            checkpoint_modified = True
+
+    # 6. Fix-specific tests (warning only, not blocking)
     tests_valid, test_warnings = validate_fix_specific_tests(cwd, checkpoint)
     if not tests_valid:
         for w in test_warnings:
