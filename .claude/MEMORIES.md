@@ -1,5 +1,13 @@
 # Session Memories
 
+## Source of Truth
+
+**This repo (`claude-code-toolkit`) is the source of truth for all skills, hooks, and configuration.**
+
+`~/.claude/skills/` and `~/.claude/hooks/` are symlinks to this repo's `config/` directory. When you edit skills or hooks (including via `~/.claude/`), you're editing this repo. **Always commit changes to preserve them.**
+
+---
+
 ## Architectural Decisions
 
 ### Status File Enforcement (2026-01-09, updated)

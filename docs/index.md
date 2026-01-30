@@ -29,7 +29,7 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 ```
 /heavy Should we use microservices or monolith?
 ```
-6 parallel Opus agents (3 dynamic + 3 fixed: Critical Reviewer, Architecture Advisor, Shipping Engineer) → **self-educate via codebase + web + vendor docs** → tech-stack aware (Next.js, PydanticAI, Azure) → structured disagreements → adversarial dialogue → principles over rubrics.
+5 parallel Opus agents (2 required: **First Principles** + **AGI-Pilled**, 1 fixed: **Critical Reviewer**, 2 dynamic) → **self-educate via codebase + web + vendor docs** → tech-stack aware (Next.js, PydanticAI, Azure) → structured disagreements → adversarial dialogue → intelligence-first, never cost-first → bounded extension (max 3 rounds).
 
 ---
 
@@ -118,13 +118,20 @@ Health checks → collects logs → diagnoses → fixes → deploys → **loops 
 ## Directory Structure
 
 ```
-prompts/
+claude-code-toolkit/           # THIS IS THE SOURCE OF TRUTH
 ├── config/
-│   ├── settings.json      # Hook definitions
-│   ├── commands/          # 11 skill definition files (+ 3 skill-commands)
-│   ├── hooks/             # Python/bash hooks (18 registered)
-│   └── skills/            # 17 skills (+ 2 deprecated)
-├── docs/                  # Documentation
-├── scripts/               # install.sh, doctor.sh
+│   ├── settings.json          # Hook definitions
+│   ├── commands/              # 11 skill definition files (+ 3 skill-commands)
+│   ├── hooks/                 # Python/bash hooks (18 registered)
+│   └── skills/                # 17 skills (+ 2 deprecated) ← EDIT HERE
+├── docs/                      # Documentation
+├── scripts/                   # install.sh, doctor.sh
 └── README.md
+
+~/.claude/                     # SYMLINKED TO REPO
+├── skills → config/skills     # Symlink - edits here go to repo
+├── hooks → config/hooks       # Symlink - edits here go to repo
+└── settings.json → config/settings.json
 ```
+
+**IMPORTANT**: `~/.claude/skills/` is a symlink to `config/skills/` in this repo. When you edit skill files, you're editing the repo. Commit changes to preserve them.

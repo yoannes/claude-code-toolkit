@@ -21,6 +21,8 @@ The installer will:
 3. Make hooks executable
 4. Verify everything works
 
+**Source of Truth**: After installation, `~/.claude/skills/` and `~/.claude/hooks/` are symlinks to this repo. When you edit skills or hooks, you're editing the repo. **Commit your changes** to preserve them.
+
 ### Installation Options
 
 ```bash
