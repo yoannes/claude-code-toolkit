@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
-from _state import is_autonomous_mode_active, is_appfix_active, is_build_active, is_episode_active
+from _state import is_autonomous_mode_active, is_appfix_active, is_build_active, is_episode_active, is_go_active
 
 
 def main():
@@ -44,6 +44,9 @@ def main():
     elif is_build_active(cwd):
         mode_name = "BUILD"
         loop_type = "task execution"
+    elif is_go_active(cwd):
+        mode_name = "GO"
+        loop_type = "fast execution"
     elif is_episode_active(cwd):
         mode_name = "EPISODE"
         loop_type = "episode generation"

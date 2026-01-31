@@ -178,6 +178,31 @@
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/lite-heavy-tracker.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/go-context-tracker.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/go-context-tracker.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/go-context-tracker.py\"",
+            "timeout": 5
           }
         ]
       },

@@ -15,11 +15,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _common import get_code_version, get_worktree_info
+from _state import is_go_active
 
 
 # ============================================================================
 # Template Constants
 # ============================================================================
+
+GO_CHECKPOINT_SCHEMA_TEMPLATE = """{version_note}
+{{
+  "self_report": {{
+    "is_job_complete": false,                // Is the job ACTUALLY done?
+    "code_changes_made": false,              // Did you modify any code files?
+    "linters_pass": false                    // (Only if code_changes_made) Did linters pass?
+  }},
+  "reflection": {{
+    "what_was_done": "...",                  // >20 chars - what you actually did
+    "what_remains": "none"                   // Must be empty to allow stop
+  }}
+}}"""
 
 CHECKPOINT_SCHEMA_TEMPLATE = """{version_note}
 {{
@@ -106,6 +120,32 @@ def block_no_checkpoint(cwd: str) -> None:
     version_note = (
         f"// Current version: {current_version}" if current_version != "unknown" else ""
     )
+
+    # Use GO-specific lightweight template when /go is active
+    if is_go_active(cwd):
+        schema = GO_CHECKPOINT_SCHEMA_TEMPLATE.format(version_note=version_note)
+        print(
+            f"""
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║  ❌ COMPLETION CHECKPOINT REQUIRED (/go)                                      ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+You must create {checkpoint_path} before stopping.
+
+/go uses a lightweight 3+1 checkpoint:
+
+{schema}
+
+RULES:
+- what_was_done must be >20 characters (describe what you did)
+- what_remains must be empty ("none") to stop
+- linters_pass only required if you changed code files (code_changes_made: true)
+
+Create this file, answer honestly, then stop again.
+""",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     schema = CHECKPOINT_SCHEMA_TEMPLATE.format(version_note=version_note)
 

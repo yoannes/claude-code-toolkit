@@ -547,7 +547,10 @@ def reset_state_for_next_task(cwd: str) -> bool:
                 state = json.loads(state_path.read_text())
                 state["iteration"] = state.get("iteration", 1) + 1
                 # /go mode keeps plan_mode_completed=True (skips planning by design)
-                if filename != "go-state.json":
+                # but must re-read for each new task (Read-gate resets)
+                if filename == "go-state.json":
+                    state["context_gathered"] = False
+                else:
                     state["plan_mode_completed"] = False
                 state["verification_evidence"] = None
                 state["services"] = {}

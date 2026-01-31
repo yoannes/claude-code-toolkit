@@ -103,6 +103,23 @@ def main():
         sys.exit(0)
 
     if plan_mode_completed:
+        # Read-gate for /go mode: block Edit/Write until at least one Read/Grep/Glob
+        if state_type == "go" and iteration == 1:
+            context_gathered = state.get("context_gathered", True)  # default True for backward compat
+            if not context_gathered:
+                read_gate_msg = (
+                    "READ FIRST — /go requires reading at least one file before editing.\n\n"
+                    "Use Read, Grep, or Glob to understand the code, then your edit will be allowed.\n"
+                    "This prevents blind edits and ensures you know what you're changing."
+                )
+                log_debug(f"Blocking {tool_name} - Read-gate: context not gathered",
+                          hook_name="plan-mode-enforcer",
+                          parsed_data={"state_type": state_type, "iteration": iteration})
+                output = {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                 "permissionDecision": "deny",
+                                                 "permissionDecisionReason": read_gate_msg}}
+                print(json.dumps(output))
+                sys.exit(0)
         sys.exit(0)
 
     log_debug(f"Blocking {tool_name} - plan mode not completed", hook_name="plan-mode-enforcer",

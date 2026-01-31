@@ -102,19 +102,20 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `docs-navigator` | Documentation |
 | `revonc-eas-deploy` | /eas, /revonc-deploy, "deploy to testflight", "build ios/android" |
 
-## Registered Hooks (21 scripts)
+## Registered Hooks (22 scripts)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
 | SessionStart | auto-update, session-snapshot, compound-context-loader, read-docs-reminder | Init, memory injection, toolkit update |
 | UserPromptSubmit | skill-state-initializer, read-docs-trigger | State files and doc suggestions |
 | PreToolUse (*) | pretooluse-auto-approve | Auto-approve during autonomous mode |
-| PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done |
+| PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done + /go Read-gate |
 | PreToolUse (Bash) | deploy-enforcer, azure-command-guard | Block deploys, guard Azure CLI |
 | PreToolUse (WebSearch) | exa-search-enforcer | Remind to use Exa MCP instead |
 | PreToolUse (ExitPlanMode) | lite-heavy-enforcer | Block until Lite Heavy done |
 | PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
-| PostToolUse (Read/Task) | lite-heavy-tracker | Track Lite Heavy progress |
+| PostToolUse (Read/Grep/Glob) | lite-heavy-tracker, go-context-tracker | Track Lite Heavy + /go Read-gate |
+| PostToolUse (Task) | lite-heavy-tracker | Track Lite Heavy progress |
 | PostToolUse (Bash) | bash-version-tracker, doc-updater-async | Track versions, suggest doc updates |
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |

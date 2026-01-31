@@ -555,6 +555,35 @@ def validate_core_completion(report: dict, reflection: dict) -> list[str]:
     return failures
 
 
+def validate_go_completion(report: dict, reflection: dict) -> list[str]:
+    """Validate /go mode checkpoint: 3+1 fields.
+
+    Always required: is_job_complete, what_remains empty, what_was_done >20 chars.
+    Conditional: linters_pass required only when code_changes_made is self-reported true.
+    """
+    failures = []
+
+    # Core completion (is_job_complete + what_remains)
+    failures.extend(validate_core_completion(report, reflection))
+
+    # what_was_done must be substantive (>20 chars)
+    what_done = reflection.get("what_was_done", "")
+    if not what_done or len(what_done.strip()) < 20:
+        failures.append(
+            "what_was_done is missing or too brief (need >20 chars) - "
+            "describe what you actually did"
+        )
+
+    # Conditional: linters_pass only when code was changed
+    if report.get("code_changes_made", False):
+        if not report.get("linters_pass", False):
+            failures.append(
+                "linters_pass required - you changed code, run the linter"
+            )
+
+    return failures
+
+
 def validate_code_requirements(
     report: dict, has_app_code: bool, has_frontend: bool
 ) -> list[str]:
@@ -797,10 +826,11 @@ def validate_checkpoint(
     report = checkpoint.get("self_report", {})
     reflection = checkpoint.get("reflection", {})
 
-    # FAST PATH: /go mode uses simplified validation
-    # Only checks is_job_complete and what_remains
+    # FAST PATH: /go mode uses 3+1 validation
+    # Core: is_job_complete, what_remains, what_was_done >20 chars
+    # Conditional: linters_pass when code_changes_made is true
     if is_go_active(cwd):
-        failures.extend(validate_core_completion(report, reflection))
+        failures.extend(validate_go_completion(report, reflection))
         return len(failures) == 0, failures
     checkpoint_modified = False
 

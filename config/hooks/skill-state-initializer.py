@@ -283,9 +283,26 @@ def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile
     elif skill_name == "go":
         # /go skips planning - set plan_mode_completed from start
         project_state["plan_mode_completed"] = True
+        project_state["context_gathered"] = False  # Read-gate: must read before editing
         project_state["task"] = "Detected from user prompt"
 
     success = True
+
+    # Mutual exclusion: /go and /build cannot coexist
+    # Creating one deletes the other to prevent silent mode downgrade
+    mutual_exclusions = {
+        "go": ["build-state.json", "forge-state.json"],
+        "build": ["go-state.json"],
+    }
+    if skill_name in mutual_exclusions:
+        for conflict_file in mutual_exclusions[skill_name]:
+            for dir_path in [Path(cwd) / ".claude", Path.home() / ".claude"]:
+                conflict_path = dir_path / conflict_file
+                if conflict_path.exists():
+                    try:
+                        conflict_path.unlink()
+                    except (IOError, OSError):
+                        pass
 
     # Create project-level state file
     try:
