@@ -183,9 +183,10 @@ SOURCE DOCUMENTS:
 **Punctuation for Pauses:**
 - Blank lines between paragraphs = short pause
 - `--` for Caine-style asides = medium pause
-- `[PAUSE]` between chapters = operator replaces with silence
+- Three blank lines between chapters = longer pause (TTS engines pause on whitespace)
 - No semicolons (awkward TTS pause)
 - No parentheses (use dashes instead)
+- NEVER use `[PAUSE]` or similar markers - TTS will read them aloud
 
 **Natural Flow:**
 - Contractions always (it's, don't, won't - not it is, do not)
@@ -311,7 +312,7 @@ For each chapter:
 2. Write continuous prose (no subheadings)
 3. Honor the emotional beat for this chapter
 4. Apply TTS constraints throughout
-5. End with `[PAUSE]` marker
+5. End with three blank lines (creates natural pause in TTS)
 
 ### 4.3 Apply Stop-Slop Pass
 
@@ -340,9 +341,10 @@ After writing, scan for and eliminate:
 
 Write the final audiobook to a single MD file:
 - Plain prose throughout (no markdown syntax that TTS will read)
-- `[PAUSE]` markers between chapters
+- Three blank lines between chapters (creates natural pause)
 - `--` for Caine-style asides
 - Blank lines between paragraphs
+- NEVER use `[PAUSE]` or similar text markers - TTS reads them aloud
 
 ---
 
@@ -424,23 +426,23 @@ This is an audiobook about [topic]. For the next [duration], we'll [approach].
 The voice you're hearing -- or imagining, if you're reading -- belongs to
 [framing]. By the end, you'll understand [promise without spoiling].
 
-[PAUSE]
+
 
 Four Hundred and Seventy-Three Lines
 
 I spent twenty-five minutes reading the same paragraph...
 
-[PAUSE]
+
 
 The Parliament of Minds
 
 Twenty-four agents were asked a question...
 
-[PAUSE]
+
 
 ...
 
-[PAUSE]
+
 
 The Bridge
 
@@ -448,6 +450,8 @@ Memory, it turns out, is not about storage...
 
 The notebook is still open on my desk. I don't remember writing this.
 ```
+
+Note: Three blank lines between chapters create natural pauses in TTS engines.
 
 ---
 
