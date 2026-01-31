@@ -269,7 +269,9 @@ def _format_injection(scored_events: list[tuple[dict, float]]) -> str:
         cat = event.get("category", "") or event.get("meta", {}).get("category", "session")
 
         event_id = event.get("id", "")
-        attrs = f'id="{event_id}" files="{files_attr}" age="{age_str}" cat="{cat}"'
+        # Dual-ID: ref="m1" for easy citation, id="evt_..." for utility tracking
+        ref_id = f"m{event_count + 1}"
+        attrs = f'ref="{ref_id}" id="{event_id}" files="{files_attr}" age="{age_str}" cat="{cat}"'
         if tags_attr:
             attrs += f' tags="{tags_attr}"'
         parts.append(f"<m {attrs}>\n{content}\n</m>")
@@ -280,8 +282,8 @@ def _format_injection(scored_events: list[tuple[dict, float]]) -> str:
 
     header = (
         f'<memories count="{event_count}">\n'
-        "Learnings from past sessions. Check if any apply before starting "
-        "— especially those matching files you will modify.\n"
+        f"BEFORE starting: scan m1-m{event_count} for applicable lessons.\n"
+        "At stop: list any that helped in memory_that_helped (e.g., [\"m1\", \"m3\"]).\n"
     )
     body = "\n\n".join(parts)
     footer = "\n</memories>"
@@ -400,8 +402,8 @@ def main():
             "session_id": session_id,
             "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "events": [
-                {"id": e.get("id", ""), "score": round(s, 3)}
-                for e, s in top_events if e.get("id")
+                {"ref": f"m{i+1}", "id": e.get("id", ""), "score": round(s, 3)}
+                for i, (e, s) in enumerate(top_events) if e.get("id")
             ],
         }
         log_path.write_text(json.dumps(log_data, indent=2))

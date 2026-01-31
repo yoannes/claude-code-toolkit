@@ -574,9 +574,9 @@ def validate_memory_fields(report: dict, reflection: dict) -> list[str]:
     # key_insight: required, >30 chars, must differ from what_was_done
     key_insight = reflection.get("key_insight", "")
     what_done = reflection.get("what_was_done", "")
-    if not key_insight or len(key_insight.strip()) < 30:
+    if not key_insight or len(key_insight.strip()) < 50:
         failures.append(
-            "key_insight is missing or too brief (need >30 chars) — "
+            "key_insight is missing or too brief (need >50 chars) — "
             "what reusable lesson should FUTURE sessions know? "
             "Not what you did — what you LEARNED."
         )
