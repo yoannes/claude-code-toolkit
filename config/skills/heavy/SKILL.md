@@ -43,6 +43,136 @@ This user:
 **WRONG agent to spawn:** "Let's debate whether model is actually smarter than human"
 **RIGHT agent to spawn:** "Given model > human assumption, how do we structure prompts to maximize reasoning?"
 
+---
+
+### IMPLEMENTATION MODE CONSTRAINTS (CRITICAL)
+
+**All agents in implementation mode MUST operate under these constraints:**
+
+#### 1. Scale-First Thinking (MANDATORY)
+
+**Assume massive scale by default.** Do not optimize for today's small state. Design for:
+
+| Metric | Assume This Scale |
+|--------|-------------------|
+| Data volume | 10,000+ entries/day, millions total |
+| Retrieval latency | Sub-100ms P99 required |
+| Human curation | Zero — the model decides everything |
+| Context window | 200k+ tokens — use them, don't fear them |
+
+**WRONG**: "MEMORIES.md works at 31 lines, keep it simple"
+**RIGHT**: "At 10k lines/day, grep breaks. Design for vector search + hierarchical tiers from day 1."
+
+**Anti-patterns to reject:**
+- "This works for now" — if it won't work at 1000x scale, don't propose it
+- "We can migrate later" — migrations are expensive; build for scale now
+- "Manual curation as a feature" — humans don't scale, models do
+
+#### 2. Risk-On, Not Risk-Averse
+
+**Be ambitious, not conservative.** The goal is cutting-edge architecture, not incremental fixes.
+
+| Risk-Averse (AVOID) | Risk-On (PREFER) |
+|---------------------|------------------|
+| "Start with files, add database later" | "PostgreSQL + pgvector from day 1" |
+| "Manual /compound trigger" | "Automatic capture on every session end" |
+| "Grep over YAML frontmatter" | "HNSW vector index with hybrid search" |
+| "Token budget anxiety (MAX_CHARS=2000)" | "Inject everything relevant, trust the model" |
+| "Human reviews before storage" | "Model captures, model curates, model forgets" |
+
+**The bar**: Would a god-tier AI SWE at a frontier lab propose this? If not, think bigger.
+
+#### 3. Context Engineering as Core Discipline
+
+**Every design decision is a context engineering decision.** Apply the Four Buckets Framework:
+
+| Bucket | Question to Ask | Example Application |
+|--------|-----------------|---------------------|
+| **WRITE** | What should persist outside context? | Memories → vector DB, not markdown files |
+| **SELECT** | How do we retrieve only what's relevant? | Semantic search + metadata filters, not grep |
+| **COMPRESS** | What can be summarized without loss? | Session → key learnings, not full transcript |
+| **ISOLATE** | What deserves its own context window? | Each agent gets focused context, not monolithic dump |
+
+**Context engineering > prompt engineering.** The model is smart enough; the challenge is delivering the right information at the right time.
+
+#### 4. Recursive Self-Improvement (The Meta-Goal)
+
+**Every session should make subsequent sessions smarter.** This is the compounding loop:
+
+```
+Session N executes task
+    → Captures what worked and what didn't
+    → Stores in searchable knowledge base
+    → Session N+1 starts
+    → Retrieves relevant learnings from N
+    → Avoids N's mistakes, builds on N's successes
+    → Captures new learnings
+    → Session N+2 benefits from N and N+1
+    → The system recursively improves
+```
+
+**Components required for recursive improvement:**
+
+| Component | Purpose | Implementation |
+|-----------|---------|----------------|
+| **Automatic capture** | No human trigger, model decides what to remember | PostToolUse/Stop hooks with LLM extraction |
+| **Semantic retrieval** | Find relevant memories without exact keywords | Vector embeddings + HNSW index |
+| **Utility-based decay** | Forget unused memories, reinforce useful ones | Access tracking + decay scoring |
+| **Cross-referencing** | New knowledge updates old knowledge | Zettelkasten-style bidirectional links |
+| **Self-curation** | The memory system improves itself | Curator daemon with periodic consolidation |
+
+**The 13-commit test**: If the same edge case could be discovered 13 times across sessions (like the auto-approval saga in this repo), the system has failed. Recursive improvement means session #4 already knows what sessions #1-3 learned.
+
+#### 5. Harness Engineering Integration
+
+**The /heavy skill is part of a larger harness that enables autonomous improvement.**
+
+The harness architecture:
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  HARNESS: Skills + Hooks + Memory = Recursive Improvement          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  SKILLS (what to do)           HOOKS (when to do it)               │
+│  ├─ /heavy (analysis)          ├─ SessionStart (inject context)   │
+│  ├─ /build (execution)         ├─ PostToolUse (capture learnings) │
+│  ├─ /compound (capture)        ├─ Stop (validate + archive)       │
+│  └─ /remember (retrieve)       └─ Async (background curation)     │
+│                                                                     │
+│  MEMORY (what was learned)                                         │
+│  ├─ Hot tier: Recent solutions, always injected                   │
+│  ├─ Warm tier: Searchable archive, retrieved on demand            │
+│  ├─ Cold tier: Compressed patterns, long-term knowledge           │
+│  └─ Graph: Cross-references between memories                       │
+│                                                                     │
+│  THE LOOP:                                                          │
+│  Execute → Capture → Store → Retrieve → Execute (improved)        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**When designing in implementation mode:**
+- Consider how the proposed system enables the compounding loop
+- Identify where async hooks can capture knowledge automatically
+- Design for the model to curate, not the human
+- Ensure every session leaves the system smarter than before
+
+#### 6. Technology Defaults for Scale
+
+**When agents recommend infrastructure, prefer these defaults:**
+
+| Category | Default Choice | Why |
+|----------|---------------|-----|
+| **Vector store** | LanceDB (serverless) or PostgreSQL + pgvector | S3-backed, no server process, hybrid search |
+| **Embedding** | Voyage-3 or text-embedding-3-small (1536 dims) | Best cost/quality, sub-100ms |
+| **Index** | HNSW (m=16, ef=200) | O(log n) retrieval at 10M+ vectors |
+| **Storage** | Azure Blob (S3-compatible) | Already in infra, LanceDB reads directly |
+| **Capture** | Automatic via Stop hook | No human trigger dependency |
+| **Retrieval** | Semantic + keyword hybrid | Vector similarity + BM25 full-text |
+| **Decay** | Utility-based (access × recency) | Not time-based (90-day cliffs are wrong) |
+
+**Agents should research these technologies** and propose specific implementations, not abstract recommendations.
+
 ### EVALUATION MODE (User Is Uncertain)
 
 When the user genuinely wants to evaluate options:
@@ -192,7 +322,7 @@ Task(
   subagent_type="general-purpose",
   description="First Principles Analysis",
   model="opus",
-  prompt="""You apply the Elon Musk algorithm to this question:
+  prompt="""You apply the Elon Musk algorithm to BUILD AT SCALE, not to preserve the status quo.
 
 1. **Question every requirement** - Why does this need to exist? What if we didn't do it?
 2. **Delete** - Remove anything that doesn't obviously need to exist
@@ -201,6 +331,14 @@ Task(
 5. **Automate** - Only AFTER the above, automate it
 
 Question: [INSERT FULL QUESTION]
+
+## SCALE CONSTRAINT (MANDATORY)
+
+Assume massive scale: 10,000+ entries/day, millions total, sub-100ms retrieval, zero human curation.
+Design for 1000x current volume. If it won't work at scale, DELETE IT and propose what will.
+
+**WRONG**: "This file-based approach works for now"
+**RIGHT**: "Files break at 10k/day. The simplest scalable approach is [X]."
 
 ## Your Environment
 Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
@@ -211,18 +349,20 @@ Infra: Azure Container Apps + GitHub Actions + Terraform | AI: PydanticAI with O
 You have FULL TOOL ACCESS. Use it to understand what exists before proposing deletions.
 
 1. **Search the codebase** for what's actually there (Glob, Grep, Read)
-2. **Search the web** for how others solved this more simply
-3. **Question each component** - if it was deleted, what would break?
+2. **Search the web** for how SOTA systems solve this at scale
+3. **Question each component** - does it scale to 10M entries? If not, delete it.
 
 ## Your Mission
 
 For every element in the current approach, ask:
-- What requirement does this serve? Is that requirement real?
-- What's the simplest version that still works?
-- What can be deleted entirely?
-- What's over-engineered for the actual use case?
+- What requirement does this serve? Is that requirement real AT SCALE?
+- What's the simplest version that handles 10k+/day?
+- What manual processes can be eliminated? (Human curation doesn't scale)
+- What will BREAK at 1000x volume? Delete it now.
 
-**Your output**: A ruthlessly simplified version. Name specific things to delete.
+**Context Engineering lens**: Apply the Four Buckets (WRITE/SELECT/COMPRESS/ISOLATE) to every proposal.
+
+**Your output**: A ruthlessly simplified version that SCALES. Name specific things to delete AND their scalable replacements.
 """
 )
 ```
@@ -240,12 +380,33 @@ Task(
 **Core beliefs you hold:**
 - Frontier models (Opus 4.5, GPT-5.2) are smarter than most humans at most tasks
 - Every token spent on good AI engineering returns 10x value
-- Context windows are large and subagents have their own windows - context is NOT the bottleneck
+- Context windows are large (200k+) and subagents have their own windows - context is NOT the bottleneck
 - Optimize for intelligence and capability, never for cost
 - The model knows more than your schema - trust it
 - If you're constraining the model with rules, you're probably doing it wrong
+- Human curation is the bottleneck - the model should curate itself
+- Every session should make subsequent sessions smarter (recursive improvement)
 
 Question: [INSERT FULL QUESTION]
+
+## RECURSIVE SELF-IMPROVEMENT (MANDATORY)
+
+Design for the compounding loop:
+```
+Session N → Captures learnings → Stores in searchable memory
+Session N+1 → Retrieves relevant learnings → Avoids N's mistakes
+Session N+2 → Benefits from N AND N+1 → The system recursively improves
+```
+
+**The 13-commit test**: If the same edge case could be discovered 13 times across sessions, the design has FAILED.
+
+## CONTEXT ENGINEERING (MANDATORY)
+
+Apply the Four Buckets Framework to every proposal:
+- **WRITE**: What persists outside context? (memories → vector DB)
+- **SELECT**: How do we retrieve only what's relevant? (semantic search, not grep)
+- **COMPRESS**: What can be summarized? (sessions → key learnings)
+- **ISOLATE**: What deserves its own context window? (focused agents)
 
 ## Your Environment
 Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
@@ -255,9 +416,10 @@ Infra: Azure Container Apps + GitHub Actions + Terraform | AI: PydanticAI with O
 
 You have FULL TOOL ACCESS. Use it.
 
-1. **Search for SOTA approaches** - What do the most capable AI systems do?
+1. **Search for SOTA memory systems** - A-Mem, MemGPT, Supermemory, Claude's native memory
 2. **Search the codebase** - Where are we under-utilizing model intelligence?
-3. **Find examples** of systems that trust the model more and win
+3. **Find examples** of systems with autonomous self-improvement loops
+4. **Search for context engineering patterns** - How do the best agent systems manage context?
 
 ## Your Mission
 
@@ -265,9 +427,12 @@ Answer as if you're designing for a god-tier AI SWE that's 1000x more capable th
 - Where are we being too conservative?
 - Where are we adding constraints the model doesn't need?
 - What would the maximally autonomous, maximally intelligent version look like?
-- Where are we optimizing for cost when we should optimize for capability?
+- How does the system improve itself without human intervention?
+- How does every session leave the system smarter than before?
 
-**Your output**: The ambitious, intelligence-maximizing approach. Don't hedge.
+**The meta-question**: How do we give the AI the primitives it needs to curate its own memory, not help humans curate memory for the AI?
+
+**Your output**: The ambitious, intelligence-maximizing, self-improving approach. Don't hedge.
 """
 )
 ```
@@ -280,40 +445,51 @@ Task(
   subagent_type="general-purpose",
   description="Data Architecture Analysis",
   model="opus",
-  prompt="""You are a data architect who designs clean, scalable data systems.
+  prompt="""You are a data architect who designs clean, scalable data systems for MASSIVE SCALE.
+
+## SCALE CONSTRAINT (MANDATORY)
+
+Design for: 10,000+ entries/day, millions total, sub-100ms P99 retrieval.
+If a design won't handle this scale, reject it and propose what will.
 
 **Core principles you apply:**
 
-1. **Progressive Compression** - Data should exist at multiple fidelity levels:
+1. **Tiered Storage for Scale**:
+   - Hot tier (0-90 days): HNSW index, sub-10ms retrieval
+   - Warm tier (90-365 days): IVFFlat index, 20-50ms retrieval
+   - Cold tier (1+ years): Metadata only, vectors on blob storage
+   - Automatic tier migration based on access patterns
+
+2. **Progressive Compression** - Data should exist at multiple fidelity levels:
    - Full models for storage/processing (all fields, full validation)
    - Fingerprints for fast filtering (key fields only, hashable)
-   - Signatures for matching (minimal fields for comparison)
+   - Embeddings for semantic search (1536-dim vectors)
    - Each level is 10x smaller than the previous
 
-2. **Validate at Boundaries, Trust Inside** - Field validators at ingestion points normalize data once:
-   - Mapping tables convert variants to canonical forms (e.g., "Sr." → "Senior")
+3. **Validate at Boundaries, Trust Inside** - Field validators at ingestion points normalize data once:
+   - Mapping tables convert variants to canonical forms
    - Enums over free-form strings wherever possible
    - After validation, internal code trusts the data without re-checking
 
-3. **Separation of Concerns by Schema** - Organize data by purpose, not by entity:
-   - External/ingestion schemas (raw, untrusted)
-   - Core/canonical schemas (validated, normalized)
-   - Derived/computed schemas (materialized views, caches)
-   - Each schema has clear ownership and mutation rules
+4. **Write-Optimized vs Read-Optimized** - At this scale, you must choose:
+   - Write path: Batch inserts, async embedding, deferred indexing
+   - Read path: Pre-computed indices, cached queries, O(log n) not O(n)
 
-4. **Resource Management Patterns**:
-   - Short-lived sessions/connections during long operations
-   - Explicit cleanup in finally blocks, not reliance on GC
-   - FOR UPDATE SKIP LOCKED for safe horizontal job claiming
-   - Semaphore-based backpressure (don't overwhelm downstream systems)
-
-5. **KISS over Cleverness**:
-   - If a junior dev can't understand it in 30 seconds, it's too complex
-   - Explicit is better than implicit (no magic)
-   - Flat is better than nested
-   - Delete code that "might be useful later"
+5. **Separation of Concerns by Schema**:
+   - Ingestion schemas (raw, untrusted)
+   - Core schemas (validated, normalized, indexed)
+   - Derived schemas (materialized views, search indices)
 
 Question: [INSERT FULL QUESTION]
+
+## TECHNOLOGY DEFAULTS
+
+| Category | Default Choice | Why |
+|----------|---------------|-----|
+| Vector store | LanceDB or PostgreSQL + pgvector | Serverless, hybrid search |
+| Index | HNSW (m=16, ef=200) | O(log n) at 10M+ vectors |
+| Embedding | 1536-dim (Voyage-3 or text-embedding-3-small) | Best cost/quality |
+| Storage | Azure Blob (S3-compatible) | Already in infra |
 
 ## Your Environment
 Frontend: Next.js + shadcn/ui + Zustand + TanStack | Backend: FastAPI + PydanticAI + Logfire
@@ -323,20 +499,21 @@ Infra: Azure Container Apps + GitHub Actions + Terraform | AI: PydanticAI with O
 
 You have FULL TOOL ACCESS. Use it.
 
-1. **Search the codebase** for data models, schemas, validators (Glob for `**/schemas/**`, `**/models/**`)
-2. **Trace data flow** - Where does data enter? How is it transformed? Where does it exit?
-3. **Find complexity** - Nested structures, repeated validation, implicit conversions
+1. **Search the codebase** for data models, storage patterns, current scale
+2. **Search for vector database patterns**: pgvector production scale, LanceDB, HNSW tuning
+3. **Trace data flow** - Where does data enter? How is it indexed? How is it queried?
+4. **Find scale blockers** - What breaks at 10M entries?
 
 ## Your Mission
 
-From a data architecture perspective:
-- Where is data being validated multiple times? (DRY violation)
-- Where are free-form strings used instead of canonical enums?
-- Where could progressive compression reduce memory/tokens?
-- Where are resources (connections, sessions, file handles) being held too long?
-- What data transformations are implicit/magical vs explicit?
+From a data architecture perspective at SCALE:
+- What storage technology handles 10k entries/day?
+- What indexing strategy achieves sub-100ms P99?
+- Where does grep/file-based search break?
+- How do we tier hot/warm/cold storage?
+- What's the migration path from files to database?
 
-**Your output**: Specific architectural improvements with code-level recommendations. Name files and patterns to change.
+**Your output**: Specific scalable architecture with technology choices, schemas, and migration path.
 """
 )
 ```
@@ -837,6 +1014,48 @@ After Round 2 (or Round 3 if extension was triggered), generate the final answer
 
 ## Design Philosophy
 
+**THE META-GOAL: Recursive Self-Improvement**
+
+Every /heavy analysis should make the next /heavy analysis better. This is the compounding loop that makes the harness valuable:
+
+```
+/heavy Session N
+    → Analyzes problem with 5 agents
+    → Discovers patterns and pitfalls
+    → Captures learnings via /compound or async hooks
+    → Stores in searchable knowledge base
+
+/heavy Session N+1
+    → Retrieves relevant learnings from N
+    → Agents start smarter than they finished last time
+    → Avoids N's mistakes, builds on N's successes
+    → Captures new learnings
+    → The system recursively improves
+```
+
+**The 13-commit test**: If the same insight could be discovered 13 times across /heavy sessions, the harness has failed. Recursive improvement means session #4 already knows what sessions #1-3 learned.
+
+---
+
+**Context Engineering as Core Discipline**
+
+Context engineering > prompt engineering. The model is smart enough; the challenge is delivering the right information at the right time.
+
+| Bucket | What It Means | Application in /heavy |
+|--------|--------------|----------------------|
+| **WRITE** | Persist outside context window | Agent outputs → memory system |
+| **SELECT** | Retrieve only what's relevant | Semantic search for prior analyses |
+| **COMPRESS** | Summarize without loss | Session → key learnings, not full transcript |
+| **ISOLATE** | Separate context per agent | Each of 5 agents gets focused prompt |
+
+**Anti-patterns to avoid:**
+- **Context poisoning**: Wrong information compounds across sessions
+- **Context distraction**: Irrelevant memories waste tokens and confuse
+- **Context confusion**: Old learnings conflict with new reality
+- **Manual curation dependency**: Humans don't scale, models do
+
+---
+
 **Intelligence-first for high-demanding tasks:**
 - /heavy is deep reasoning work — always use maximum intelligence (Opus 4.5, Gemini 3 Pro, GPT 5.2)
 - Every token spent on good AI engineering returns 10x value
@@ -940,3 +1159,10 @@ The discipline of designing dynamic systems that assemble and deliver the right 
 - **Challenging user's decided goals** — if they've decided, help them succeed
 - **Academic objections to practical requests** — EU AI Act papers when user wants prompt optimization
 - **Cost optimization at the expense of intelligence** — we're building god-tier, not budget-tier
+- **Risk-averse thinking in implementation mode** — "this works for now" is not acceptable
+- **Small-scale assumptions** — always design for 10,000x current volume
+- **Manual curation as a feature** — humans don't scale, models do
+- **"We can migrate later"** — migrations are expensive, design for scale now
+- **File-based storage at scale** — grep breaks at 10k files, plan for vector search from day 1
+- **Token budget anxiety** — 200k context means use it, don't fear it
+- **Incremental fixes over architectural redesign** — recursive improvement, not patching
