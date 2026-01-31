@@ -284,7 +284,7 @@ echo "────────────────────────�
 
 # Check user-level state files
 echo "  User-level (~/.claude/):"
-for STATE_FILE in appfix-state.json build-state.json; do
+for STATE_FILE in appfix-state.json melt-state.json build-state.json; do
     echo -n "    $STATE_FILE: "
     if [ -f "$CLAUDE_DIR/$STATE_FILE" ]; then
         echo -e "${GREEN}EXISTS${NC}"
@@ -303,7 +303,7 @@ echo ""
 echo "  Project-level ($PROJECT_DIR/.claude/):"
 PROJECT_CLAUDE="$PROJECT_DIR/.claude"
 if [ -d "$PROJECT_CLAUDE" ]; then
-    for STATE_FILE in appfix-state.json build-state.json; do
+    for STATE_FILE in appfix-state.json melt-state.json build-state.json; do
         echo -n "    $STATE_FILE: "
         if [ -f "$PROJECT_CLAUDE/$STATE_FILE" ]; then
             echo -e "${GREEN}EXISTS${NC}"

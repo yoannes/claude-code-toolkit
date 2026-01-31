@@ -275,7 +275,7 @@ Skills without MCP dependencies (`/go`, `/compound`, `/burndown`, `/qa`, `/deslo
 | [Hooks](concepts/hooks.md) | Hook lifecycle |
 | [Architecture](architecture.md) | System design |
 | [Appfix Guide](skills/appfix-guide.md) | Complete debugging guide |
-| [Build Guide](skills/build-guide.md) | Autonomous task execution guide (with Lite Heavy) |
+| [Melt Guide](skills/melt-guide.md) | Autonomous task execution guide (with Lite Heavy) |
 | [Philosophy](philosophy.md) | Core philosophy and principles |
 | [Architecture Philosophy](architecture-philosophy.md) | One System, One Loop — the mental model for recursive self-improvement |
 | [Settings Reference](reference/settings.md) | Configuration options |

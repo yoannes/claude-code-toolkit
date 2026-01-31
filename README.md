@@ -1,6 +1,6 @@
 # Melt
 
-**Anthropic's GPUs feel the heat. You get verified code.**
+**Claude cannot stop until the job is done. You get verified code.**
 
 Natural language in, verified deployed code out. The stop hook blocks completion until every checkpoint boolean passes — Claude cannot stop until the job is actually done.
 
@@ -60,7 +60,7 @@ All must pass. If not, Claude is blocked and must continue working.
 
 The toolkit is built on the Namshub philosophy: In Neal Stephenson's *Snow Crash*, a nam-shub is code that, once invoked, must execute to completion.
 
-"Melt" captures what happens when you invoke it — 5 parallel Opus 4.5 agents working in concert, pushing Anthropic's H100s until they glow. Your machine stays cool. You get verified code.
+"Melt" is what happens to resistance. Give it a task, and 5 parallel Opus agents attack it from every angle until it's solved — linting, deploying, verifying in real browsers. The stop hook blocks completion until every boolean checkpoint passes. The task melts away. You get verified code.
 
 ## Documentation
 
