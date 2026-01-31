@@ -1,201 +1,165 @@
 ---
 name: prompt-engineering-patterns
-description: Master advanced prompt engineering techniques to maximize LLM performance, reliability, and controllability in production. Use when optimizing prompts, improving LLM outputs, or designing production prompt templates.
+description: Design prompts, skills, and CLAUDE.md files as context engineering problems. Use when writing skills, optimizing prompts, designing agent workflows, auditing CLAUDE.md, or reducing prompt bloat. Triggers on "prompt engineering", "optimize prompt", "write a skill", "reduce bloat", "context engineering".
 ---
 
-# Prompt Engineering Patterns
+# Context Engineering for Prompts
 
-Master advanced prompt engineering techniques to maximize LLM performance, reliability, and controllability.
+Context engineering > prompt engineering. The model is smart enough. The challenge
+is delivering the right information at the right time in the right format.
 
-## When to Use This Skill
+## Section Map
 
-- Designing complex prompts for production LLM applications
-- Optimizing prompt performance and consistency
-- Implementing structured reasoning patterns (chain-of-thought, tree-of-thought)
-- Building few-shot learning systems with dynamic example selection
-- Creating reusable prompt templates with variable interpolation
-- Debugging and refining prompts that produce inconsistent outputs
-- Implementing system prompts for specialized AI assistants
+| If your task is... | Read section... |
+|---------------------|----------------|
+| Writing a new skill SKILL.md | #writing-skills-and-prompts |
+| Optimizing an existing prompt/skill | #the-deletion-test + #compression-patterns |
+| Designing subagent prompts | #isolation-for-multi-agent |
+| Auditing CLAUDE.md | #the-deletion-test + #compression-patterns |
+| Debugging bad outputs | #context-failure-diagnosis |
 
-## Core Capabilities
+## The One Rule
 
-### 1. Few-Shot Learning
-- Example selection strategies (semantic similarity, diversity sampling)
-- Balancing example count with context window constraints
-- Constructing effective demonstrations with input-output pairs
-- Dynamic example retrieval from knowledge bases
-- Handling edge cases through strategic example selection
+**Every token must earn its place.** A skill loads into context on every invocation.
+A CLAUDE.md loads on every session. Waste compounds at scale.
 
-### 2. Chain-of-Thought Prompting
-- Step-by-step reasoning elicitation
-- Zero-shot CoT with "Let's think step by step"
-- Few-shot CoT with reasoning traces
-- Self-consistency techniques (sampling multiple reasoning paths)
-- Verification and validation steps
+### The Deletion Test
 
-### 3. Prompt Optimization
-- Iterative refinement workflows
-- A/B testing prompt variations
-- Measuring prompt performance metrics (accuracy, consistency, latency)
-- Reducing token usage while maintaining quality
-- Handling edge cases and failure modes
+For every line in a prompt or skill, ask these four questions:
 
-### 4. Template Systems
-- Variable interpolation and formatting
-- Conditional prompt sections
-- Multi-turn conversation templates
-- Role-based prompt composition
-- Modular prompt components
+| # | Question | If YES... |
+|---|----------|-----------|
+| 1 | Would removing this change the model's behavior? | Keep |
+| 2 | Does the model already know this from training? | Delete |
+| 3 | Could the model discover this via Glob/Grep in 2 seconds? | Delete |
+| 4 | Can this be said in half the words without losing meaning? | Compress |
 
-### 5. System Prompt Design
-- Setting model behavior and constraints
-- Defining output formats and structure
-- Establishing role and expertise
-- Safety guidelines and content policies
-- Context setting and background information
+If a line fails question 1, delete it. Everything else is negotiable.
 
-## Quick Start
+## Context Engineering Applied
 
-```python
-from prompt_optimizer import PromptTemplate, FewShotSelector
+The Four Buckets framework (see /heavy for full treatment) maps directly to
+prompt and skill design:
 
-# Define a structured prompt template
-template = PromptTemplate(
-    system="You are an expert SQL developer. Generate efficient, secure SQL queries.",
-    instruction="Convert the following natural language query to SQL:\n{query}",
-    few_shot_examples=True,
-    output_format="SQL code block with explanatory comments"
-)
+| Bucket | Question for Prompts | Toolkit Primitive |
+|--------|---------------------|-------------------|
+| **WRITE** | What must persist in the skill file vs. left to the model's training? | Skills, CLAUDE.md, memory events |
+| **SELECT** | What information does this specific invocation need? | Section maps, conditional loading |
+| **COMPRESS** | Can you say it in fewer tokens without losing behavioral impact? | Tables over prose, constraints over guidance |
+| **ISOLATE** | Does this work belong in its own context window? | Subagents via Task(), parallel execution |
 
-# Configure few-shot learning
-selector = FewShotSelector(
-    examples_db="sql_examples.jsonl",
-    selection_strategy="semantic_similarity",
-    max_examples=3
-)
+**Key insight**: Only WRITE what the model doesn't already know AND is specific
+to this toolkit/project. Everything else is wasted tokens.
 
-# Generate optimized prompt
-prompt = template.render(
-    query="Find all users who registered in the last 30 days",
-    examples=selector.select(query="user registration date filter")
-)
-```
+## Writing Skills and Prompts
 
-## Key Patterns
+### Checklist (follow in order)
 
-### Progressive Disclosure
-Start with simple prompts, add complexity only when needed:
+1. **State the role in one sentence.** "You are X." Not a paragraph.
+2. **List 3-7 behavioral constraints.** What the model MUST and MUST NOT do.
+   Constraints change behavior more than guidance.
+3. **Provide the workflow.** Numbered steps or ASCII diagram. Not prose.
+4. **Add ONE concrete example** if the output format isn't obvious.
+   One example provides ~80% of the value of five.
+5. **Specify output format explicitly** when it matters (JSON schema, table, etc.)
+6. **Run the Deletion Test.** Remove everything that fails question 1.
 
-1. **Level 1**: Direct instruction
-   - "Summarize this article"
+### Behavioral Anchors (imperatives, not explanations)
 
-2. **Level 2**: Add constraints
-   - "Summarize this article in 3 bullet points, focusing on key findings"
+- **Start simple, add complexity only when needed.** The first draft should be
+  the shortest version that works. Add detail only when testing reveals gaps.
+- **Demonstrate, don't explain.** One before/after example teaches more than
+  a paragraph of theory. Never explain a technique without showing it.
+- **Constraints over guidance.** "Never output more than 3 items" beats
+  "Please try to keep your output concise and focused."
+- **Imperative voice.** "Extract entities." not "The model should attempt to
+  extract entities from the provided text."
 
-3. **Level 3**: Add reasoning
-   - "Read this article, identify the main findings, then summarize in 3 bullet points"
+## Anti-Patterns
 
-4. **Level 4**: Add examples
-   - Include 2-3 example summaries with input-output pairs
+| Anti-Pattern | Wrong | Right |
+|-------------|-------|-------|
+| **Teaching the model what it knows** | 400 lines explaining chain-of-thought | Don't include it (Claude invented CoT) |
+| **Dead code in markdown** | Python classes with imports that never execute | If code must exist, put it in scripts/ where it runs |
+| **Generic examples** | Sentiment analysis few-shot examples | Examples from THIS project's actual domain |
+| **Padding phrases** | "This technique is highly effective for tasks requiring specific formats" | Delete the sentence |
+| **Aspirational infrastructure** | MockLLMClient, PromptVersionControl classes | Reference actual infrastructure (hooks, memory) |
+| **Completeness trap** | "Also consider edge cases, error handling, performance, security, accessibility..." | List only what's relevant to THIS task |
+| **Politeness tokens** | "Please kindly ensure that you carefully..." | "Do X." (agent-to-agent needs no pleasantries) |
+| **The textbook trap** | A skill that explains prompt engineering theory | A skill that changes the model's next output |
 
-### Instruction Hierarchy
-```
-[System Context] → [Task Instruction] → [Examples] → [Input Data] → [Output Format]
-```
+## Compression Patterns
 
-### Error Recovery
-Build prompts that gracefully handle failures:
-- Include fallback instructions
-- Request confidence scores
-- Ask for alternative interpretations when uncertain
-- Specify how to indicate missing information
+### Tables Over Prose
+Tables compress 3-5x vs prose for the same information. Use tables for:
+comparisons, decision matrices, anti-patterns, mappings. Use prose only for
+concepts that require narrative flow.
 
-## Best Practices
+### Constraints Over Guidance
+"DO NOT use EnterPlanMode" (from /go) is 6 tokens that change behavior.
+"You should generally avoid using planning mode unless necessary" is 11 tokens
+that change nothing.
 
-1. **Be Specific**: Vague prompts produce inconsistent results
-2. **Show, Don't Tell**: Examples are more effective than descriptions
-3. **Test Extensively**: Evaluate on diverse, representative inputs
-4. **Iterate Rapidly**: Small changes can have large impacts
-5. **Monitor Performance**: Track metrics in production
-6. **Version Control**: Treat prompts as code with proper versioning
-7. **Document Intent**: Explain why prompts are structured as they are
+### Imperative Over Descriptive
+- Wrong: "The system prompt section is responsible for defining the model's role"
+- Right: "Set the role in the system section."
 
-## Common Pitfalls
+### Negative Space
+What you omit teaches as much as what you include. The model fills gaps
+intelligently. Sparse instructions + clear constraints > detailed step-by-step
+that the model would figure out anyway.
 
-- **Over-engineering**: Starting with complex prompts before trying simple ones
-- **Example pollution**: Using examples that don't match the target task
-- **Context overflow**: Exceeding token limits with excessive examples
-- **Ambiguous instructions**: Leaving room for multiple interpretations
-- **Ignoring edge cases**: Not testing on unusual or boundary inputs
+### Reference, Don't Duplicate
+If content exists elsewhere in the toolkit, point to it:
+"Apply the Four Buckets framework (see /heavy SKILL.md lines 86-96)"
+One line replaces duplicating a section.
 
-## Integration Patterns
+## Context Failure Diagnosis
 
-### With RAG Systems
-```python
-# Combine retrieved context with prompt engineering
-prompt = f"""Given the following context:
-{retrieved_context}
+When a prompt or skill produces bad output, diagnose which bucket failed:
 
-{few_shot_examples}
+| Symptom | Likely Bucket Failure | Fix |
+|---------|----------------------|-----|
+| Output is wrong or hallucinated | **SELECT** — wrong context provided | Check what information reached the model |
+| Output is correct but verbose/sloppy | **COMPRESS** — too much low-quality context dilutes signal | Trim the skill/prompt, run Deletion Test |
+| Output misses critical info | **WRITE** — knowledge not persisted anywhere | Add to skill, CLAUDE.md, or memory event |
+| Agent duplicates another agent's work | **ISOLATE** — context bleeding between agents | Give each agent a focused, non-overlapping mandate |
 
-Question: {user_question}
+## Isolation for Multi-Agent
 
-Provide a detailed answer based solely on the context above. If the context doesn't contain enough information, explicitly state what's missing."""
-```
+When designing prompts for /heavy or /build subagents:
 
-### With Validation
-```python
-# Add self-verification step
-prompt = f"""{main_task_prompt}
+1. **Each agent gets a focused role.** One sentence. Not the full project context.
+2. **Each agent researches independently.** Give them tools, not pre-digested context.
+3. **Minimum viable context transfer.** When passing Agent A's output to Agent B,
+   pass claims + evidence, not the full analysis.
+4. **Diminishing returns.** 2 agents = 1 tension. 5 agents = 10 tensions.
+   8+ agents = diminishing returns. Sweet spots: /heavy uses 5, /build uses 4.
 
-After generating your response, verify it meets these criteria:
-1. Answers the question directly
-2. Uses only information from provided context
-3. Cites specific sources
-4. Acknowledges any uncertainty
+## Living References
 
-If verification fails, revise your response."""
-```
+Don't read explanations. Read exemplary skills:
 
-## Performance Optimization
+| Principle | Read This Skill | What to Notice |
+|-----------|----------------|----------------|
+| Maximum compression | /go (115 lines) | Assumes model competence, no ceremony |
+| Context isolation | /heavy (5 parallel agents) | Each agent gets focused prompt |
+| Constraint-driven design | /build (checkpoint schema) | Booleans force honest behavior |
+| Memory integration | /compound (95 lines) | Captures learnings, system injects them |
+| Operational checklist | /compound Step 1-4 | Every line drives action, not theory |
 
-### Token Efficiency
-- Remove redundant words and phrases
-- Use abbreviations consistently after first definition
-- Consolidate similar instructions
-- Move stable content to system prompts
+## Integration
 
-### Latency Reduction
-- Minimize prompt length without sacrificing quality
-- Use streaming for long-form outputs
-- Cache common prompt prefixes
-- Batch similar requests when possible
+| System | How It Connects |
+|--------|----------------|
+| **Memory** | stop hook auto-captures session outcomes; compound-context-loader injects relevant events at SessionStart |
+| **Hooks** | Enforce behavioral contracts (stop-validator checks booleans, plan-mode-enforcer blocks premature edits) |
+| **Subagents** | Task() provides the ISOLATE primitive — each agent gets its own context window |
+| **/compound** | When you discover a prompt anti-pattern, capture it. If the same fix applies 3+ times, modify the skill itself |
 
-## Resources
+## The Meta-Test
 
-- **references/few-shot-learning.md**: Deep dive on example selection and construction
-- **references/chain-of-thought.md**: Advanced reasoning elicitation techniques
-- **references/prompt-optimization.md**: Systematic refinement workflows
-- **references/prompt-templates.md**: Reusable template patterns
-- **references/system-prompts.md**: System-level prompt design
-- **assets/prompt-template-library.md**: Battle-tested prompt templates
-- **assets/few-shot-examples.json**: Curated example datasets
-- **scripts/optimize-prompt.py**: Automated prompt optimization tool
-
-## Success Metrics
-
-Track these KPIs for your prompts:
-- **Accuracy**: Correctness of outputs
-- **Consistency**: Reproducibility across similar inputs
-- **Latency**: Response time (P50, P95, P99)
-- **Token Usage**: Average tokens per request
-- **Success Rate**: Percentage of valid outputs
-- **User Satisfaction**: Ratings and feedback
-
-## Next Steps
-
-1. Review the prompt template library for common patterns
-2. Experiment with few-shot learning for your specific use case
-3. Implement prompt versioning and A/B testing
-4. Set up automated evaluation pipelines
-5. Document your prompt engineering decisions and learnings
+This skill practices what it preaches. It replaced a 2,680-line / 9-file skill
+(Python classes, template libraries, textbook CoT explanations) with ~170 lines.
+Every deleted line failed the Deletion Test. If you can delete a line from THIS
+skill without changing behavior, open a PR.

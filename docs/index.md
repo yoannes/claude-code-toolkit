@@ -95,7 +95,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `frontend-design` | Web UI development |
 | `async-python-patterns` | asyncio, concurrent |
 | `nextjs-tanstack-stack` | Next.js, TanStack |
-| `prompt-engineering-patterns` | Prompt optimization |
+| `prompt-engineering-patterns` | Context engineering for prompts, skills, and CLAUDE.md |
 | `ux-designer` | UX design |
 | `design-improver` | UI review |
 | `ux-improver` | UX review |

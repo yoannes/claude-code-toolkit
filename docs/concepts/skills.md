@@ -165,16 +165,14 @@ nextjs-tanstack-stack/
 
 **Location**: `~/.claude/skills/prompt-engineering-patterns/`
 
-**Source**: `@wshobson/agents/prompt-engineering-patterns`
-
-**Triggers**: Prompt engineering, few-shot learning, chain-of-thought, prompt optimization
+**Triggers**: Prompt engineering, optimize prompt, write a skill, reduce bloat, context engineering
 
 **Coverage**:
-- Few-shot learning patterns
-- Chain-of-thought prompting
-- Prompt template libraries
-- System prompt design
-- Prompt optimization techniques
+- Context engineering applied to prompts and skills (Four Buckets)
+- The Deletion Test for eliminating bloat
+- Compression patterns (tables over prose, constraints over guidance)
+- Anti-patterns for AI-writing-prompts-for-AI
+- Multi-agent prompt isolation
 
 ### 3. webapp-testing
 
