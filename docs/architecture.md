@@ -202,6 +202,7 @@ The stop-validator.py hook:
    - Outputs checklist to stderr
    - Returns exit code 2 (block)
 3. If `stop_hook_active: true` (second stop attempt):
+   - Auto-captures checkpoint as memory event to `~/.claude/memory/{project-hash}/events/`
    - Returns exit code 0 (allow)
 
 **Loop Prevention**: The `stop_hook_active` flag prevents infinite loops:

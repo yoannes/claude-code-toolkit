@@ -549,7 +549,7 @@ Location: `~/.claude/hooks/stop-validator.py`
 The stop validator implements two-phase blocking with execution validation:
 
 **Phase 1 (First Stop)**: Shows full compliance checklist with plan verification and change-specific testing
-**Phase 2 (Second Stop)**: Validates execution requirements before allowing stop
+**Phase 2 (Second Stop)**: Validates execution requirements, auto-captures checkpoint as memory event, then allows stop
 
 ```python
 #!/usr/bin/env python3
@@ -596,6 +596,8 @@ def main():
         if not execution_ok:
             print(f"❌ BLOCKED: {msg}", file=sys.stderr)
             sys.exit(2)
+        # Auto-capture checkpoint as memory event
+        capture_memory_event(cwd, session_id)
         sys.exit(0)  # All requirements met
 
     # FIRST STOP: Show FULL checklist with plan and change detection
@@ -611,6 +613,7 @@ Key features:
 - **Frontend change detection**: Auto-requires browser testing for .tsx/.jsx changes
 - **Testing state tracking**: Reads `.claude/testing-state.json` to verify /webtest ran
 - **Second stop enforcement**: Blocks if requirements not met (prevents bypass)
+- **Memory auto-capture**: Archives checkpoint as memory event to `~/.claude/memory/{project-hash}/events/`
 - **Infrastructure bypass**: Skips web testing for infrastructure-only changes
 
 #### Infrastructure Bypass

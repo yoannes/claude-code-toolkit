@@ -70,7 +70,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `/weboptimizer` | Performance benchmarking |
 | `/designimprove` | UI improvement |
 | `/uximprove` | UX improvement |
-| `/compound` | Capture solved problems as structured markdown for cross-session learning |
+| `/compound` | Capture solved problems as memory events for cross-session learning |
 
 ## All Skills (25 total)
 
@@ -106,7 +106,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
-| SessionStart | auto-update, session-snapshot, compound-context-loader, read-docs-reminder | Init, context injection, toolkit update |
+| SessionStart | auto-update, session-snapshot, compound-context-loader, read-docs-reminder | Init, memory injection, toolkit update |
 | UserPromptSubmit | skill-state-initializer, read-docs-trigger | State files and doc suggestions |
 | PreToolUse (*) | pretooluse-auto-approve | Auto-approve during autonomous mode |
 | PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done |
@@ -118,8 +118,48 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | PostToolUse (Bash) | bash-version-tracker, doc-updater-async | Track versions, suggest doc updates |
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
-| Stop | stop-validator | Validate checkpoint |
+| Stop | stop-validator | Validate checkpoint, auto-capture memory event |
 | PermissionRequest | permissionrequest-auto-approve | Auto-approve during autonomous mode |
+
+---
+
+## Memory System
+
+**Append-only event store** for cross-session learning. Events stored in `~/.claude/memory/{project-hash}/events/`.
+
+### How It Works
+
+1. **Auto-capture** (primary path): `stop-validator` hook archives checkpoint as memory event on every successful stop
+2. **Manual capture** (deep captures): `/compound` skill for detailed problem documentation
+3. **Auto-injection**: `compound-context-loader` hook injects top 5 relevant events at SessionStart
+4. **Scoring**: Events ranked by recency (60%) + entity overlap (40%)
+
+### Storage
+
+- **Location**: `~/.claude/memory/{project-hash}/events/evt_{timestamp}.json`
+- **Isolation**: Project-scoped via SHA256(git_remote_url | repo_root)
+- **Retention**: 90-day TTL, 500 event cap per project
+- **Format**: JSON events with atomic writes (F_FULLFSYNC + os.replace for crash safety)
+
+### Event Schema
+
+```json
+{
+  "id": "evt_20260131T143022-12345-a1b2c3",
+  "ts": "2026-01-31T14:30:22Z",
+  "type": "compound",
+  "content": "Learning summary (1-5 sentences)",
+  "entities": ["file.py", "concept", "tool"],
+  "source": "compound",
+  "meta": {"session_context": "..."}
+}
+```
+
+### Manual Search
+
+```bash
+grep -riwl "keyword" ~/.claude/memory/*/events/
+```
 
 ---
 
@@ -151,10 +191,14 @@ namshub/        # THIS IS THE SOURCE OF TRUTH
 ├── scripts/                   # install.sh, doctor.sh
 └── README.md
 
-~/.claude/                     # SYMLINKED TO REPO
+~/.claude/                     # SYMLINKED TO REPO + MEMORY
 ├── skills → config/skills     # Symlink - edits here go to repo
 ├── hooks → config/hooks       # Symlink - edits here go to repo
-└── settings.json → config/settings.json
+├── settings.json → config/settings.json
+└── memory/                    # Event store (NOT in repo)
+    └── {project-hash}/
+        ├── events/            # Memory events (JSON)
+        └── manifest.json      # Fast lookup index
 ```
 
 **IMPORTANT**: `~/.claude/skills/` is a symlink to `config/skills/` in this repo. When you edit skill files, you're editing the repo. Commit changes to preserve them.
