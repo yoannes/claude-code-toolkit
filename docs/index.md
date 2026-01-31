@@ -62,8 +62,9 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `/weboptimizer` | Performance benchmarking |
 | `/designimprove` | UI improvement |
 | `/uximprove` | UX improvement |
+| `/compound` | Capture solved problems as structured markdown for cross-session learning |
 
-## All Skills (21 total)
+## All Skills (22 total)
 
 | Skill | Triggers |
 |-------|----------|
@@ -72,6 +73,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `burndown` | /burndown, "burn down debt", "clean up codebase", "fix the slop" |
 | `appfix` | (Internal: web debugging - prefer /repair) |
 | `heavy` | /heavy, "heavy analysis", "multiple perspectives", "debate this" |
+| `compound` | /compound, "document this solution", "capture this learning", "remember this fix" |
 | `audiobook` | /audiobook, "create an audiobook", "turn this into audio", "make TTS-ready" |
 | `mobileappfix` | (Internal: mobile debugging - prefer /repair) |
 | `skill-sandbox` | /skill-sandbox, "test skill", "sandbox test" |

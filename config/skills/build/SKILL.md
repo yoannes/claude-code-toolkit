@@ -320,6 +320,12 @@ Lite Heavy is a streamlined version of `/heavy` that provides multi-perspective 
    - Environment and deployment configs
    - Relevant code patterns for the task
    - Existing tests and validation
+   - **Past solutions** (if `docs/solutions/` exists):
+     ```bash
+     grep -riwl "{task-keyword}" docs/solutions/
+     ```
+     Read any matching files — they contain root causes, failed attempts,
+     and prevention guidance from previous sessions.
 
 3. **Read `/heavy` agent prompts and generate dynamic perspectives**:
 
