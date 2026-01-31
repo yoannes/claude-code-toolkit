@@ -172,14 +172,18 @@ def is_mobileappfix_active(cwd: str, session_id: str = "") -> bool:
     return False
 
 
-def is_build_active(cwd: str, session_id: str = "") -> bool:
-    """Check if build mode is active via state file or env var."""
-    for state_filename in ("build-state.json", "forge-state.json"):
+def is_melt_active(cwd: str, session_id: str = "") -> bool:
+    """Check if melt mode is active via state file or env var.
+
+    /melt is the primary autonomous task execution skill.
+    Legacy aliases: /build, /forge, /godo
+    """
+    for state_filename in ("melt-state.json", "build-state.json", "forge-state.json"):
         state = load_state_file(cwd, state_filename)
         if state and not is_state_expired(state):
             return True
 
-    for state_filename in ("build-state.json", "forge-state.json"):
+    for state_filename in ("melt-state.json", "build-state.json", "forge-state.json"):
         user_state_path = Path.home() / ".claude" / state_filename
         if user_state_path.exists():
             try:
@@ -189,12 +193,19 @@ def is_build_active(cwd: str, session_id: str = "") -> bool:
             except (json.JSONDecodeError, IOError):
                 pass
 
+    if os.environ.get("MELT_ACTIVE", "").lower() in ("true", "1", "yes"):
+        return True
     if os.environ.get("BUILD_ACTIVE", "").lower() in ("true", "1", "yes"):
         return True
     if os.environ.get("FORGE_ACTIVE", "").lower() in ("true", "1", "yes"):
         return True
 
     return False
+
+
+def is_build_active(cwd: str, session_id: str = "") -> bool:
+    """Deprecated: Use is_melt_active() instead."""
+    return is_melt_active(cwd, session_id)
 
 
 # Backward compatibility aliases
@@ -313,13 +324,13 @@ def is_uximprove_active(cwd: str, session_id: str = "") -> bool:
 
 
 def is_autonomous_mode_active(cwd: str, session_id: str = "") -> bool:
-    """Check if any autonomous execution mode is active (go, build, repair, burndown, episode, or improve).
+    """Check if any autonomous execution mode is active (go, melt, repair, burndown, episode, or improve).
 
     This is the unified check for enabling auto-approval hooks.
     """
     return (
         is_go_active(cwd, session_id)
-        or is_build_active(cwd, session_id)
+        or is_melt_active(cwd, session_id)
         or is_repair_active(cwd, session_id)
         or is_burndown_active(cwd, session_id)
         or is_episode_active(cwd, session_id)
@@ -330,11 +341,11 @@ def is_autonomous_mode_active(cwd: str, session_id: str = "") -> bool:
 def get_autonomous_state(cwd: str, session_id: str = "") -> tuple[dict | None, str | None]:
     """Get the autonomous mode state file and its type, filtering expired.
 
-    Checks go-state first (fast mode), then build-state, appfix-state (repair), burndown-state, episode-state.
+    Checks go-state first (fast mode), then melt-state, appfix-state (repair), burndown-state, episode-state.
     Checks both project-level AND user-level state files.
 
     Returns:
-        Tuple of (state_dict, state_type) where state_type is 'go', 'build', 'repair', 'burndown', or 'episode'
+        Tuple of (state_dict, state_type) where state_type is 'go', 'melt', 'repair', 'burndown', or 'episode'
         Returns (None, None) if no state file found or all expired
     """
     # Check /go first (takes precedence as fast mode)
@@ -342,10 +353,10 @@ def get_autonomous_state(cwd: str, session_id: str = "") -> tuple[dict | None, s
     if go_state and not is_state_expired(go_state):
         return go_state, "go"
 
-    for build_filename in ("build-state.json", "forge-state.json"):
-        build_state = load_state_file(cwd, build_filename)
-        if build_state and not is_state_expired(build_state):
-            return build_state, "build"
+    for melt_filename in ("melt-state.json", "build-state.json", "forge-state.json"):
+        melt_state = load_state_file(cwd, melt_filename)
+        if melt_state and not is_state_expired(melt_state):
+            return melt_state, "melt"
 
     appfix_state = load_state_file(cwd, "appfix-state.json")
     if appfix_state and not is_state_expired(appfix_state):
@@ -365,8 +376,9 @@ def get_autonomous_state(cwd: str, session_id: str = "") -> tuple[dict | None, s
 
     for filename, state_type in [
         ("go-state.json", "go"),
-        ("build-state.json", "build"),
-        ("forge-state.json", "build"),
+        ("melt-state.json", "melt"),
+        ("build-state.json", "melt"),
+        ("forge-state.json", "melt"),
         ("appfix-state.json", "repair"),
         ("burndown-state.json", "burndown"),
         ("episode-state.json", "episode"),
@@ -397,7 +409,7 @@ def cleanup_autonomous_state(cwd: str) -> list[str]:
     2. ALL .claude/ directories walking UP from cwd
     """
     deleted = []
-    state_files = ["go-state.json", "appfix-state.json", "build-state.json", "forge-state.json", "burndown-state.json", "episode-state.json", "improve-state.json"]
+    state_files = ["go-state.json", "appfix-state.json", "melt-state.json", "build-state.json", "forge-state.json", "burndown-state.json", "episode-state.json", "improve-state.json"]
 
     # 1. Clean user-level state
     user_claude_dir = Path.home() / ".claude"
@@ -487,7 +499,7 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
     Called at SessionStart to clean up stale state from previous sessions.
     """
     deleted = []
-    state_files = ["go-state.json", "appfix-state.json", "build-state.json", "forge-state.json", "burndown-state.json", "episode-state.json", "improve-state.json"]
+    state_files = ["go-state.json", "appfix-state.json", "melt-state.json", "build-state.json", "forge-state.json", "burndown-state.json", "episode-state.json", "improve-state.json"]
 
     def _should_clean(state_path: Path) -> bool:
         try:
@@ -583,7 +595,7 @@ def reset_state_for_next_task(cwd: str) -> bool:
     NOTE: For /go mode, plan_mode_completed is NOT reset (it stays true)
     because /go skips the planning phase by design.
     """
-    for filename in ("go-state.json", "build-state.json", "forge-state.json", "appfix-state.json", "burndown-state.json", "episode-state.json", "improve-state.json"):
+    for filename in ("go-state.json", "melt-state.json", "build-state.json", "forge-state.json", "appfix-state.json", "burndown-state.json", "episode-state.json", "improve-state.json"):
         state_path = _find_state_file_path(cwd, filename)
         if state_path:
             try:

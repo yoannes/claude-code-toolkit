@@ -1,4 +1,4 @@
-# Namshub Reference
+# Melt Reference
 
 ## Quick Links
 
@@ -15,12 +15,12 @@
 ```
 /go fix the typo in README.md
 ```
-**No planning phase** → ReAct-style direct execution → lints → commits → **8-10x faster than /build**.
+**No planning phase** → ReAct-style direct execution → lints → commits → **8-10x faster than /melt**.
 
-### `/build` — Universal Task Execution
+### `/melt` — Universal Task Execution
 **Use when**: Complex task that benefits from multi-agent planning.
 ```
-/build add a logout button to the navbar
+/melt add a logout button to the navbar
 ```
 **Lite Heavy planning** (4 parallel Opus agents: First Principles + AGI-Pilled + 2 dynamic perspectives) → implements → lints → commits → deploys → verifies in browser → **cannot stop until done**.
 
@@ -52,7 +52,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | Command | Purpose |
 |---------|---------|
 | `/go` | Fast autonomous execution (no planning, 8-10x faster) |
-| `/build` | Autonomous task execution (with Lite Heavy planning) |
+| `/melt` | Autonomous task execution (with Lite Heavy planning) |
 | `/repair` | Unified debugging router (web → appfix, mobile → mobileappfix) |
 | `/burndown` | Autonomous tech debt elimination (combines /deslop + /qa) |
 | `/heavy` | Multi-agent analysis |
@@ -79,7 +79,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | Skill | Triggers |
 |-------|----------|
 | `go` | /go, "just go", "go fast", "quick fix", "quick build" |
-| `build` | /build, /godo (legacy), "go do", "just do it", "execute this" |
+| `melt` | /melt, /build (legacy), /forge (legacy), "go do", "just do it", "execute this" |
 | `repair` | /repair, /appfix, /mobileappfix, "fix the app", "debug production" |
 | `burndown` | /burndown, "burn down debt", "clean up codebase", "fix the slop" |
 | `appfix` | (Internal: web debugging - prefer /repair) |
@@ -91,7 +91,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `audiobook` | /audiobook, "create an audiobook", "turn this into audio", "make TTS-ready" |
 | `mobileappfix` | (Internal: mobile debugging - prefer /repair) |
 | `skill-sandbox` | /skill-sandbox, "test skill", "sandbox test" |
-| `harness-test` | /harness-test, "test harness changes" (auto-triggers in /build for toolkit) |
+| `harness-test` | /harness-test, "test harness changes" (auto-triggers in /melt for toolkit) |
 | `toolkit` | /toolkit, "update toolkit" |
 | `deploy-pipeline` | /deploy, deployment questions |
 | `webapp-testing` | Browser testing |

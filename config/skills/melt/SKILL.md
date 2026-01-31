@@ -1,9 +1,11 @@
 ---
-name: build
-description: Task-agnostic autonomous execution. Identifies any task and executes it through a complete fix-verify loop until done. Use when asked to "go do", "just do it", "execute this", "/build", "/forge" (legacy), or "/godo" (legacy).
+name: melt
+description: Task-agnostic autonomous execution. Identifies any task and executes it through a complete fix-verify loop until done. Use when asked to "go do", "just do it", "execute this", "/melt", "/build" (legacy), "/forge" (legacy), or "/godo" (legacy).
 ---
 
-# Autonomous Task Execution (/build)
+# Autonomous Task Execution (/melt)
+
+> "Anthropic's GPUs feel the heat. You get verified code."
 
 Task-agnostic autonomous execution skill that iterates until the task is complete and verified.
 
@@ -110,8 +112,8 @@ TEST_PASSWORD=your-test-password
 
 ## Triggers
 
-- `/build` (primary)
-- `/build` (was /forge, /godo)
+- `/melt` (primary)
+- `/build` (legacy alias)
 - "go do"
 - "just do it"
 - "execute this"
@@ -203,7 +205,7 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 0: ACTIVATION                                            │
-│     └─► Create .claude/build-state.json (enables auto-approval) │
+│     └─► Create .claude/melt-state.json (enables auto-approval)  │
 │     └─► Identify task from user prompt                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  ╔═══════════════════════════════════════════════════════════╗  │
@@ -251,11 +253,11 @@ Before stopping, you MUST create `.claude/completion-checkpoint.json`:
 
 ### State File (Automatic)
 
-**The state file is created automatically by the `skill-state-initializer.py` hook when you invoke `/build` or `/godo`.**
+**The state file is created automatically by the `skill-state-initializer.py` hook when you invoke `/melt` or `/build`.**
 
-When you type `/build`, `/godo`, "go do", "just do it", or similar triggers, the UserPromptSubmit hook immediately creates:
-- `.claude/build-state.json` - Project-level state for iteration tracking
-- `~/.claude/build-state.json` - User-level state for cross-repo detection
+When you type `/melt`, `/build`, "go do", "just do it", or similar triggers, the UserPromptSubmit hook immediately creates:
+- `.claude/melt-state.json` - Project-level state for iteration tracking
+- `~/.claude/melt-state.json` - User-level state for cross-repo detection
 
 This happens BEFORE Claude starts processing, ensuring auto-approval hooks are active from the first tool call.
 
@@ -266,7 +268,7 @@ This happens BEFORE Claude starts processing, ensuring auto-approval hooks are a
 
 ```bash
 # Only use this if the automatic hook didn't create the files
-mkdir -p .claude && cat > .claude/build-state.json << 'EOF'
+mkdir -p .claude && cat > .claude/melt-state.json << 'EOF'
 {
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "task": "user's task description",
@@ -279,7 +281,7 @@ mkdir -p .claude && cat > .claude/build-state.json << 'EOF'
 }
 EOF
 
-mkdir -p ~/.claude && cat > ~/.claude/build-state.json << 'EOF'
+mkdir -p ~/.claude && cat > ~/.claude/melt-state.json << 'EOF'
 {
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "origin_project": "$(pwd)"
@@ -652,7 +654,7 @@ Update checkpoint and try to stop. If blocked, address the issues and try again.
 
 **Cleanup on completion**: Remove state files when done:
 ```bash
-rm -f ~/.claude/build-state.json .claude/build-state.json
+rm -f ~/.claude/melt-state.json .claude/melt-state.json
 ```
 
 ## Exit Conditions
@@ -674,7 +676,7 @@ rm -f ~/.claude/build-state.json .claude/build-state.json
 
 ## Comparison with /appfix
 
-| Aspect | /build | /appfix |
+| Aspect | /melt | /appfix |
 |--------|--------|---------|
 | Purpose | Any task | Debugging failures |
 | Lite Heavy planning | Yes (4 agents) | No |
@@ -688,7 +690,7 @@ rm -f ~/.claude/build-state.json .claude/build-state.json
 | Mobile verification | Maestro MCP | Maestro MCP |
 | Completion checkpoint | Same schema | Same schema |
 
-`/build` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
+`/melt` is the universal base skill. `/appfix` is a debugging specialization that adds diagnostic phases.
 
 Both skills now auto-detect mobile projects (via `app.json`, `eas.json`, `ios/`, `android/`) and require Maestro testing instead of browser testing.
 
@@ -794,7 +796,7 @@ COORDINATOR WORKFLOW:
 **How coordination state is detected:**
 - `skill-state-initializer.py` automatically detects worktree context
 - Sets `coordinator: false`, `parallel_mode: true` when in worktree
-- Subagents can check `.claude/appfix-state.json` or `.claude/build-state.json`
+- Subagents can check `.claude/appfix-state.json` or `.claude/melt-state.json`
 
 ### Garbage Collection for Stale Worktrees
 

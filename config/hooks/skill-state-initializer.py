@@ -43,7 +43,8 @@ from _state import (
 DEACTIVATION_PATTERNS = [
     r"(?:^|\s)/go\s+off\b",  # Fast task execution skill
     r"(?:^|\s)/repair\s+off\b",  # Primary debugging skill
-    r"(?:^|\s)/build\s+off\b",  # Primary task execution skill
+    r"(?:^|\s)/melt\s+off\b",  # Primary task execution skill
+    r"(?:^|\s)/build\s+off\b",  # Legacy alias
     r"(?:^|\s)/burndown\s+off\b",  # Tech debt elimination skill
     r"(?:^|\s)/episode\s+off\b",  # Video episode generation skill
     r"(?:^|\s)/improve\s+off\b",  # Design/UX improvement skill
@@ -55,7 +56,7 @@ DEACTIVATION_PATTERNS = [
     r"(?:^|\s)/godo\s+off\b",  # Legacy alias
     r"\bstop autonomous mode\b",
     r"\bdisable auto[- ]?approval\b",
-    r"\bturn off (go|repair|build|forge|burndown|episode|improve|designimprove|uximprove|appfix|mobileappfix|godo)\b",
+    r"\bturn off (go|repair|melt|build|forge|burndown|episode|improve|designimprove|uximprove|appfix|mobileappfix|godo)\b",
 ]
 
 # Trigger patterns for each skill
@@ -98,14 +99,16 @@ SKILL_TRIGGERS = {
         r"\bmaestro (tests? )?(failing|broken|not working)\b",  # Mobile E2E triggers
         r"\bsimulator (crash|fail|not working)\b",  # Mobile-specific
     ],
-    "build": [  # PRIMARY task execution skill
-        r"(?:^|\s)/build\b",  # Primary slash command
+    "melt": [  # PRIMARY task execution skill (melts Anthropic's GPUs)
+        r"(?:^|\s)/melt\b",  # Primary slash command
+        r"(?:^|\s)/build\b",  # Legacy alias
         r"(?:^|\s)/forge\b",  # Legacy alias
         r"(?:^|\s)/godo\b",  # Legacy alias
         r"\bgo do\b",  # Natural language
         r"\bjust do it\b",
         r"\bexecute this\b",
         r"\bmake it happen\b",
+        r"\bmelt the gpus?\b",  # GPU melting trigger
     ],
     "burndown": [  # Tech debt elimination skill
         r"(?:^|\s)/burndown\b",  # Primary slash command
@@ -291,7 +294,7 @@ def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile
     }
 
     # Add skill-specific fields
-    if skill_name == "build":
+    if skill_name == "melt":
         project_state["task"] = "Detected from user prompt"
     elif skill_name == "go":
         # /go skips planning - set plan_mode_completed from start
@@ -308,11 +311,11 @@ def create_state_file(cwd: str, skill_name: str, session_id: str = "", is_mobile
 
     success = True
 
-    # Mutual exclusion: /go and /build cannot coexist
+    # Mutual exclusion: /go and /melt cannot coexist
     # Creating one deletes the other to prevent silent mode downgrade
     mutual_exclusions = {
-        "go": ["build-state.json", "forge-state.json"],
-        "build": ["go-state.json"],
+        "go": ["melt-state.json", "build-state.json", "forge-state.json"],
+        "melt": ["go-state.json"],
     }
     if skill_name in mutual_exclusions:
         for conflict_file in mutual_exclusions[skill_name]:

@@ -9,6 +9,7 @@ __pycache__/
 .claude/appfix-state.json
 .claude/forge-state.json
 .claude/build-state.json
+.claude/melt-state.json
 .claude/burndown-state.json
 .claude/godo-state.json
 .claude/session-owner.json
@@ -23,6 +24,7 @@ __pycache__/
 **/.claude/appfix-state.json
 **/.claude/forge-state.json
 **/.claude/build-state.json
+**/.claude/melt-state.json
 **/.claude/burndown-state.json
 **/.claude/godo-state.json
 **/.claude/session-owner.json

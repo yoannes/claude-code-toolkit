@@ -1,6 +1,6 @@
-# Namshub
+# Melt
 
-**Code that must execute.**
+**Anthropic's GPUs feel the heat. You get verified code.**
 
 Natural language in, verified deployed code out. The stop hook blocks completion until every checkpoint boolean passes — Claude cannot stop until the job is actually done.
 
@@ -13,7 +13,7 @@ cd namshub && ./scripts/install.sh
 ```
 
 ```
-> /build add a logout button to the navbar
+> /melt add a logout button to the navbar
 ```
 
 Watch what happens:
@@ -28,7 +28,7 @@ If step 5 fails, it loops back. You get working code, not promises.
 
 ## Four Skills
 
-**`/build`** — Autonomous execution with 4-agent Lite Heavy planning. Give it a task, get verified deployed code.
+**`/melt`** — Autonomous execution with 4-agent Lite Heavy planning. Give it a task, get verified deployed code. (Aliases: `/build`, `/forge`)
 
 **`/repair`** — Debugging loop. Auto-detects web vs mobile, collects logs, fixes, deploys, verifies. Loops until healthy.
 
@@ -58,7 +58,9 @@ All must pass. If not, Claude is blocked and must continue working.
 
 ## The Name
 
-In Neal Stephenson's *Snow Crash*, a nam-shub is code that, once invoked, must execute to completion. That's what this toolkit enforces: Claude cannot stop until the job is done.
+The toolkit is built on the Namshub philosophy: In Neal Stephenson's *Snow Crash*, a nam-shub is code that, once invoked, must execute to completion.
+
+"Melt" captures what happens when you invoke it — 5 parallel Opus 4.5 agents working in concert, pushing Anthropic's H100s until they glow. Your machine stays cool. You get verified code.
 
 ## Documentation
 
