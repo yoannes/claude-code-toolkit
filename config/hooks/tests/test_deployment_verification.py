@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 # Add hooks directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -301,9 +303,6 @@ class TestDeployEnforcerHook:
 # ============================================================================
 # bash-version-tracker.py GH deploy detection tests
 # ============================================================================
-
-
-import pytest
 
 
 class TestBashVersionTrackerGhDeploy:

@@ -380,33 +380,39 @@ def _parse_haiku_response(text: str, events: list[dict]) -> list[str] | None:
         return None
 
 
-def _call_haiku_sdk(api_key: str, prompt: str, events: list[dict]) -> list[str] | None:
-    """Call Haiku via anthropic SDK."""
+def _call_haiku_subprocess(prompt: str, events: list[dict]) -> list[str] | None:
+    """Call Haiku via claude subprocess (inherits OAuth auth from CLI)."""
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(
-            api_key=api_key,
-            max_retries=1,
+        # Use claude --print with haiku model
+        # This inherits the OAuth authentication from Claude Code
+        result = subprocess.run(
+            ["claude", "--print", "--model", "haiku"],
+            input=prompt,
+            capture_output=True,
+            text=True,
             timeout=HAIKU_TIMEOUT,
         )
 
-        response = client.messages.create(
-            model=HAIKU_MODEL,
-            max_tokens=HAIKU_MAX_TOKENS,
-            system="You are a memory relevance selector. Output ONLY valid JSON.",
-            messages=[{"role": "user", "content": prompt}],
-        )
+        if result.returncode != 0:
+            log_debug(f"Claude subprocess exit {result.returncode}: {result.stderr[:200]}",
+                      hook_name="compound-context-loader")
+            return None
 
-        return _parse_haiku_response(response.content[0].text, events)
+        return _parse_haiku_response(result.stdout, events)
 
+    except subprocess.TimeoutExpired:
+        log_debug("Claude subprocess timed out", hook_name="compound-context-loader")
+        return None
+    except FileNotFoundError:
+        log_debug("Claude CLI not found in PATH", hook_name="compound-context-loader")
+        return None
     except Exception as e:
-        log_debug(f"Haiku SDK error: {e}", hook_name="compound-context-loader")
+        log_debug(f"Claude subprocess error: {e}", hook_name="compound-context-loader")
         return None
 
 
-def _call_haiku_urllib(api_key: str, prompt: str, events: list[dict]) -> list[str] | None:
-    """Call Haiku via stdlib urllib (fallback when SDK not installed)."""
+def _call_haiku_api(api_key: str, prompt: str, events: list[dict]) -> list[str] | None:
+    """Call Haiku via direct API (fallback when CLI unavailable)."""
     payload = {
         "model": HAIKU_MODEL,
         "max_tokens": HAIKU_MAX_TOKENS,
@@ -446,21 +452,27 @@ def _call_haiku_selection(
     git_context: dict,
     changed_files: set[str],
 ) -> list[str] | None:
-    """Use Haiku to select relevant memories. Returns event IDs or None on failure."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        log_debug("No ANTHROPIC_API_KEY, using deterministic fallback",
-                  hook_name="compound-context-loader")
-        return None
+    """Use Haiku to select relevant memories. Returns event IDs or None on failure.
 
+    Selection strategy (in order):
+    1. Claude subprocess via `claude --print -m haiku` (uses OAuth auth)
+    2. Direct API call if ANTHROPIC_API_KEY is set (for non-CLI environments)
+    """
     prompt = _build_haiku_prompt(events, git_context, changed_files)
 
-    # Try SDK first, fall back to urllib
-    try:
-        import anthropic  # noqa: F401
-        return _call_haiku_sdk(api_key, prompt, events)
-    except ImportError:
-        return _call_haiku_urllib(api_key, prompt, events)
+    # Primary: Claude subprocess (uses OAuth auth from CLI)
+    result = _call_haiku_subprocess(prompt, events)
+    if result:
+        return result
+
+    # Fallback: Direct API if ANTHROPIC_API_KEY is explicitly set
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key:
+        log_debug("Falling back to direct API call", hook_name="compound-context-loader")
+        return _call_haiku_api(api_key, prompt, events)
+
+    log_debug("No Haiku selection method available", hook_name="compound-context-loader")
+    return None
 
 
 # ============================================================================
@@ -663,7 +675,6 @@ def main():
     # Build final selection
     if haiku_used and haiku_selected_ids:
         # Use Haiku's selection - preserve order, assign high scores
-        selected_id_set = set(haiku_selected_ids)
         id_to_event = {e.get("id"): e for e in events}
         top_events = []
         for i, eid in enumerate(haiku_selected_ids[:MAX_EVENTS]):

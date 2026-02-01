@@ -68,35 +68,35 @@ def test_cross_directory_trust():
         print("\n[Test 1] Same session_id, different directory (should PASS)")
         result = _is_cwd_under_origin(new_directory, user_state, session_id)
         print(f"  _is_cwd_under_origin('{new_directory}', state, '{session_id}'): {result}")
-        assert result == True, "FAILED: Same session should be trusted"
+        assert result is True, "FAILED: Same session should be trusted"
         print("  ✓ PASSED")
 
         # Test 2: No session_id, different directory - should FAIL
         print("\n[Test 2] No session_id, different directory (should FAIL)")
         result = _is_cwd_under_origin(new_directory, user_state, "")
         print(f"  _is_cwd_under_origin('{new_directory}', state, ''): {result}")
-        assert result == False, "FAILED: No session should fall back to directory check"
+        assert result is False, "FAILED: No session should fall back to directory check"
         print("  ✓ PASSED")
 
         # Test 3: Different session_id, different directory - should FAIL
         print("\n[Test 3] Different session_id, different directory (should FAIL)")
         result = _is_cwd_under_origin(new_directory, user_state, "different-session")
         print(f"  _is_cwd_under_origin('{new_directory}', state, 'different-session'): {result}")
-        assert result == False, "FAILED: Different session should not be trusted"
+        assert result is False, "FAILED: Different session should not be trusted"
         print("  ✓ PASSED")
 
         # Test 4: is_autonomous_mode_active with session_id
         print("\n[Test 4] is_autonomous_mode_active with session_id (should PASS)")
         result = is_autonomous_mode_active(new_directory, session_id)
         print(f"  is_autonomous_mode_active('{new_directory}', '{session_id}'): {result}")
-        assert result == True, "FAILED: Same session should activate autonomous mode"
+        assert result is True, "FAILED: Same session should activate autonomous mode"
         print("  ✓ PASSED")
 
         # Test 5: is_autonomous_mode_active without session_id
         print("\n[Test 5] is_autonomous_mode_active without session_id (should FAIL)")
         result = is_autonomous_mode_active(new_directory, "")
         print(f"  is_autonomous_mode_active('{new_directory}', ''): {result}")
-        assert result == False, "FAILED: No session should not activate autonomous mode"
+        assert result is False, "FAILED: No session should not activate autonomous mode"
         print("  ✓ PASSED")
 
         # Test 6: get_autonomous_state with session_id
@@ -105,7 +105,7 @@ def test_cross_directory_trust():
         print(f"  get_autonomous_state('{new_directory}', '{session_id}'): ({state is not None}, {state_type})")
         assert state is not None, "FAILED: Should find state"
         assert state_type == "appfix", f"FAILED: Should be 'appfix', got {state_type}"
-        assert state.get("plan_mode_completed") == True, "FAILED: plan_mode_completed should be True"
+        assert state.get("plan_mode_completed") is True, "FAILED: plan_mode_completed should be True"
         print("  ✓ PASSED")
 
         print("\n" + "=" * 60)
