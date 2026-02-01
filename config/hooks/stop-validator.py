@@ -290,7 +290,7 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
 
     v4 (2026-02-01): Raw transcript archival handled by PreCompact hook.
     v5 (2026-02-01): SessionEnd archiver removed (redundant with PreCompact).
-    This function captures structured memory events only.
+    This function captures structured memory events + core assertions.
     """
     try:
         from _memory import append_event
@@ -344,6 +344,16 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
     if not category or category.lower() in ("session", ""):
         category = "session"
 
+    # Problem type from checkpoint (optional, controlled vocabulary)
+    problem_type = self_report.get("problem_type", "")
+    valid_problem_types = {
+        "race-condition", "config-mismatch", "api-change", "import-resolution",
+        "state-management", "crash-safety", "data-integrity", "performance",
+        "tooling", "dependency-management",
+    }
+    if problem_type and problem_type not in valid_problem_types:
+        problem_type = ""  # Silently drop invalid values
+
     # Quality tier for scoring
     has_lesson = bool(key_insight and len(key_insight.strip()) > 10)
     has_terms = bool(search_terms and len(search_terms) >= 2)
@@ -361,6 +371,7 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
                 "quality": quality,
                 "files_changed": files_changed[:5],
             },
+            problem_type=problem_type,
         )
         log_debug(
             "Auto-captured memory event from checkpoint",
@@ -369,6 +380,7 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
                 "entities": entities[:5],
                 "quality": quality,
                 "category": category,
+                "problem_type": problem_type,
             },
         )
     except Exception as e:
@@ -376,6 +388,20 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
             f"Auto-capture failed: {e}",
             hook_name="stop-validator",
         )
+
+    # Write core assertions from checkpoint (optional field, max 5)
+    try:
+        from _memory import append_assertion
+        core_assertions = reflection.get("core_assertions", [])
+        if isinstance(core_assertions, list):
+            for item in core_assertions[:5]:
+                if isinstance(item, dict):
+                    topic = item.get("topic", "")
+                    assertion = item.get("assertion", "")
+                    if topic and assertion:
+                        append_assertion(cwd, topic, assertion)
+    except (ImportError, Exception) as e:
+        log_debug(f"Core assertions write failed: {e}", hook_name="stop-validator")
 
 
 if __name__ == "__main__":

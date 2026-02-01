@@ -630,3 +630,234 @@ class TestConstants:
         mod = module_from_spec(spec)
         spec.loader.exec_module(mod)
         assert mod.MAX_EVENTS == 5, f"MAX_EVENTS should be 5, got {mod.MAX_EVENTS}"
+
+
+# ============================================================================
+# Core Assertions Tests (_memory.py)
+# ============================================================================
+
+
+class TestNormalizeTopic:
+    """Tests for _normalize_topic."""
+
+    def test_basic_normalization(self):
+        from _memory import _normalize_topic
+        assert _normalize_topic("Hook Execution Model") == "hook-execution-model"
+
+    def test_underscores_to_hyphens(self):
+        from _memory import _normalize_topic
+        assert _normalize_topic("crash_safety") == "crash-safety"
+
+    def test_truncation(self):
+        from _memory import _normalize_topic
+        long_topic = "a" * 100
+        assert len(_normalize_topic(long_topic)) == 50
+
+    def test_strips_whitespace(self):
+        from _memory import _normalize_topic
+        assert _normalize_topic("  spaced  ") == "spaced"
+
+
+class TestCoreAssertions:
+    """Tests for append_assertion, read_assertions, compact_assertions."""
+
+    def test_append_and_read(self):
+        from _memory import append_assertion, read_assertions
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    ok = append_assertion(td, "test-topic", "Test assertion value")
+                    assert ok is True
+
+                    assertions = read_assertions(td)
+                    assert len(assertions) == 1
+                    assert assertions[0]["topic"] == "test-topic"
+                    assert assertions[0]["assertion"] == "Test assertion value"
+
+    def test_dedup_last_write_wins(self):
+        from _memory import append_assertion, read_assertions
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    append_assertion(td, "my-topic", "First version")
+                    append_assertion(td, "my-topic", "Second version")
+
+                    assertions = read_assertions(td)
+                    assert len(assertions) == 1
+                    assert assertions[0]["assertion"] == "Second version"
+
+    def test_multiple_topics(self):
+        from _memory import append_assertion, read_assertions
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    append_assertion(td, "topic-a", "Assertion A")
+                    append_assertion(td, "topic-b", "Assertion B")
+                    append_assertion(td, "topic-c", "Assertion C")
+
+                    assertions = read_assertions(td)
+                    assert len(assertions) == 3
+
+    def test_compact_evicts_oldest(self):
+        from _memory import append_assertion, compact_assertions, read_assertions, MAX_ASSERTIONS
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    # Write more than MAX_ASSERTIONS topics
+                    for i in range(MAX_ASSERTIONS + 5):
+                        append_assertion(td, f"topic-{i:03d}", f"Assertion {i}")
+
+                    removed = compact_assertions(td)
+                    assert removed > 0
+
+                    assertions = read_assertions(td)
+                    assert len(assertions) <= MAX_ASSERTIONS
+
+    def test_empty_topic_rejected(self):
+        from _memory import append_assertion
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    assert append_assertion(td, "", "some value") is False
+
+    def test_empty_assertion_rejected(self):
+        from _memory import append_assertion
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    assert append_assertion(td, "topic", "   ") is False
+
+    def test_no_file_returns_empty(self):
+        from _memory import read_assertions
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    assertions = read_assertions(td)
+                    assert assertions == []
+
+
+# ============================================================================
+# Problem Type Tests (_memory.py)
+# ============================================================================
+
+
+class TestProblemType:
+    """Tests for problem_type parameter in append_event."""
+
+    def test_problem_type_stored(self):
+        from _memory import append_event, safe_read_event
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    path = append_event(
+                        td,
+                        "test content with problem type",
+                        ["test-entity"],
+                        event_type="test",
+                        source="test",
+                        problem_type="race-condition",
+                    )
+                    assert path is not None
+                    event = safe_read_event(path)
+                    assert event["problem_type"] == "race-condition"
+
+    def test_problem_type_auto_injected_as_entity(self):
+        from _memory import append_event, safe_read_event
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    path = append_event(
+                        td,
+                        "test content for entity injection",
+                        ["existing-entity"],
+                        event_type="test",
+                        source="test",
+                        problem_type="crash-safety",
+                    )
+                    event = safe_read_event(path)
+                    assert "crash-safety" in event["entities"]
+                    assert "existing-entity" in event["entities"]
+
+    def test_no_problem_type_omitted(self):
+        from _memory import append_event, safe_read_event
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    path = append_event(
+                        td,
+                        "test content without problem type",
+                        ["test-entity"],
+                        event_type="test",
+                        source="test",
+                    )
+                    event = safe_read_event(path)
+                    assert "problem_type" not in event
+
+    def test_problem_type_not_duplicated_in_entities(self):
+        from _memory import append_event, safe_read_event
+        with tempfile.TemporaryDirectory() as td:
+            with patch("_memory.MEMORY_ROOT", Path(td)):
+                with patch("_memory.get_project_hash", return_value="testhash"):
+                    path = append_event(
+                        td,
+                        "test dedup of problem in entities",
+                        ["race-condition", "other"],
+                        event_type="test",
+                        source="test",
+                        problem_type="race-condition",
+                    )
+                    event = safe_read_event(path)
+                    # Should not duplicate
+                    assert event["entities"].count("race-condition") == 1
+
+
+# ============================================================================
+# Format Injection with Problem Type
+# ============================================================================
+
+
+class TestFormatInjectionProblemType:
+    """Tests for problem attribute in <m> tags."""
+
+    def setup_method(self):
+        from importlib.util import spec_from_file_location, module_from_spec
+        spec = spec_from_file_location(
+            "compound_context_loader",
+            str(Path(__file__).parent.parent / "compound-context-loader.py"),
+        )
+        mod = module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self._format_injection = mod._format_injection
+
+    def test_problem_attribute_present(self):
+        events = [
+            (
+                {
+                    "id": "evt_test_002",
+                    "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "content": "LESSON: test",
+                    "entities": ["test.py"],
+                    "category": "bugfix",
+                    "problem_type": "race-condition",
+                },
+                0.8,
+            )
+        ]
+        output = self._format_injection(events)
+        assert 'problem="race-condition"' in output
+
+    def test_no_problem_attribute_when_empty(self):
+        events = [
+            (
+                {
+                    "id": "evt_test_003",
+                    "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "content": "LESSON: test",
+                    "entities": ["test.py"],
+                    "category": "architecture",
+                },
+                0.8,
+            )
+        ]
+        output = self._format_injection(events)
+        assert "problem=" not in output

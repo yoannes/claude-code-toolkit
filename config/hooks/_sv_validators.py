@@ -16,7 +16,7 @@ import sys
 # Add hooks directory to path for sibling imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _common import get_code_version
+from _common import get_code_version, VERSION_TRACKING_EXCLUSIONS
 from _checkpoint import (
     get_fields_to_invalidate,
     save_checkpoint,
@@ -72,16 +72,16 @@ def is_mobile_project(cwd: str) -> bool:
 
 
 def get_git_diff_files() -> list[str]:
-    """Get list of modified files (staged + unstaged)."""
+    """Get list of modified files (staged + unstaged), excluding .claude/ metadata."""
     try:
         staged = subprocess.run(
-            ["git", "diff", "--cached", "--name-only"],
+            ["git", "diff", "--cached", "--name-only", "--"] + VERSION_TRACKING_EXCLUSIONS,
             capture_output=True,
             text=True,
             timeout=5,
         )
         unstaged = subprocess.run(
-            ["git", "diff", "--name-only"],
+            ["git", "diff", "--name-only", "--"] + VERSION_TRACKING_EXCLUSIONS,
             capture_output=True,
             text=True,
             timeout=5,

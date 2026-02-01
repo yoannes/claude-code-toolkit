@@ -286,9 +286,12 @@ def _format_injection(scored_events: list[tuple[dict, float]]) -> str:
         cat = event.get("category", "") or event.get("meta", {}).get("category", "session")
 
         event_id = event.get("id", "")
+        problem = event.get("problem_type", "")
         # Dual-ID: ref="m1" for easy citation, id="evt_..." for utility tracking
         ref_id = f"m{event_count + 1}"
         attrs = f'ref="{ref_id}" id="{event_id}" files="{files_attr}" age="{age_str}" cat="{cat}"'
+        if problem:
+            attrs += f' problem="{problem}"'
         if tags_attr:
             attrs += f' tags="{tags_attr}"'
         parts.append(f"<m {attrs}>\n{content}\n</m>")
@@ -329,6 +332,26 @@ def main():
             hook_name="compound-context-loader",
         )
         sys.exit(0)
+
+    # Compact and inject core assertions BEFORE event scoring
+    assertions_block = ""
+    try:
+        from _memory import compact_assertions, read_assertions
+        compact_assertions(cwd)
+        assertions = read_assertions(cwd)
+        if assertions:
+            assertion_lines = []
+            for a in assertions:
+                topic = a.get("topic", "")
+                text = a.get("assertion", "")
+                assertion_lines.append(f"  <a topic=\"{topic}\">{text}</a>")
+            assertions_block = (
+                "<core-assertions>\n"
+                + "\n".join(assertion_lines)
+                + "\n</core-assertions>"
+            )
+    except (ImportError, Exception):
+        pass
 
     # Cleanup old events at session start
     try:
@@ -395,12 +418,17 @@ def main():
     if len(output) > MAX_CHARS:
         output = output[:MAX_CHARS - 15] + "\n</memories>"
 
+    # Prepend core assertions before memories
+    if assertions_block:
+        output = assertions_block + "\n\n" + output
+
     log_debug(
         "Injecting memory context",
         hook_name="compound-context-loader",
         parsed_data={
             "events_count": len(top_events),
             "gated_count": gated_count,
+            "assertions_count": len(assertions) if assertions_block else 0,
             "output_chars": len(output),
         },
     )

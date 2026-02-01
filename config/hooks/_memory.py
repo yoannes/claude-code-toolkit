@@ -188,12 +188,17 @@ def append_event(
     source: str = "compound",
     category: str = "session",
     meta: dict | None = None,
+    problem_type: str = "",
 ) -> Path | None:
     """Append a new event to the store. Returns the event file path.
 
     Returns None if the event is a duplicate of a recent event.
     Filename includes timestamp + PID + random suffix for uniqueness
     without locking.
+
+    problem_type: optional controlled vocabulary tag for the type of problem
+    solved (e.g., "race-condition", "config-mismatch"). Auto-injected as
+    a concept entity for retrieval matching.
     """
     event_dir = get_memory_dir(cwd)
 
@@ -205,6 +210,10 @@ def append_event(
             parsed_data={"content_prefix": content[:50]},
         )
         return None
+
+    # Auto-inject problem_type as concept entity for retrieval matching
+    if problem_type and problem_type not in entities:
+        entities = list(entities) + [problem_type]
 
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y%m%dT%H%M%S")
@@ -222,6 +231,8 @@ def append_event(
         "category": category,
         "meta": meta or {},
     }
+    if problem_type:
+        event["problem_type"] = problem_type
 
     event_path = event_dir / f"{event_id}.json"
     atomic_write_json(event_path, event)
@@ -399,4 +410,179 @@ def cleanup_old_events(cwd: str) -> int:
             hook_name="memory",
         )
 
+    return removed
+
+
+# ============================================================================
+# Core Assertions
+# ============================================================================
+
+ASSERTIONS_FILENAME = "core-assertions.jsonl"
+MAX_ASSERTIONS = 20
+
+
+def _normalize_topic(topic: str) -> str:
+    """Normalize topic for dedup: lowercase, strip, spaces→hyphens, truncate 50."""
+    return topic.lower().strip().replace(" ", "-").replace("_", "-")[:50]
+
+
+def _get_assertions_path(cwd: str) -> Path:
+    """Get path to core-assertions.jsonl for this project."""
+    project_hash = get_project_hash(cwd)
+    return MEMORY_ROOT / project_hash / ASSERTIONS_FILENAME
+
+
+def append_assertion(cwd: str, topic: str, assertion: str) -> bool:
+    """Append one assertion to core-assertions.jsonl.
+
+    Uses flock + F_FULLFSYNC for crash safety. Topic is normalized
+    for dedup (last-write-wins during compaction).
+
+    Returns True if successfully written.
+    """
+    topic = _normalize_topic(topic)
+    if not topic or not assertion.strip():
+        return False
+
+    path = _get_assertions_path(cwd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.parent / ".assertions.lock"
+
+    entry = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "topic": topic,
+        "assertion": assertion.strip(),
+    }
+    line = json.dumps(entry, separators=(",", ":")) + "\n"
+
+    try:
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                with open(path, "a") as f:
+                    f.write(line)
+                    f.flush()
+                    if hasattr(fcntl, "F_FULLFSYNC"):
+                        fcntl.fcntl(f.fileno(), fcntl.F_FULLFSYNC)
+                    else:
+                        os.fsync(f.fileno())
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        return True
+    except (IOError, OSError) as e:
+        log_debug(f"append_assertion failed: {e}", hook_name="memory")
+        return False
+
+
+def read_assertions(cwd: str) -> list[dict]:
+    """Read assertions, dedup by topic (last-write-wins), return max 20.
+
+    Returns list of dicts sorted by ts descending.
+    """
+    path = _get_assertions_path(cwd)
+    if not path.exists():
+        return []
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (IOError, OSError):
+        return []
+
+    # Parse JSONL, dedup by topic (last-write-wins)
+    by_topic: dict[str, dict] = {}
+    for line in raw.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+            topic = entry.get("topic", "")
+            if topic:
+                by_topic[topic] = entry
+        except json.JSONDecodeError:
+            continue
+
+    # Sort by ts descending, take max 20
+    entries = sorted(by_topic.values(), key=lambda e: e.get("ts", ""), reverse=True)
+    return entries[:MAX_ASSERTIONS]
+
+
+def compact_assertions(cwd: str) -> int:
+    """Rewrite assertions file atomically: dedup + LRU eviction.
+
+    Called at SessionStart for housekeeping. Returns number of
+    entries removed during compaction.
+    """
+    path = _get_assertions_path(cwd)
+    if not path.exists():
+        return 0
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (IOError, OSError):
+        return 0
+
+    # Parse all entries
+    all_entries: list[dict] = []
+    for line in raw.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            all_entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    if not all_entries:
+        return 0
+
+    # Dedup by topic (last-write-wins)
+    by_topic: dict[str, dict] = {}
+    for entry in all_entries:
+        topic = entry.get("topic", "")
+        if topic:
+            by_topic[topic] = entry
+
+    # Sort by ts descending, evict beyond MAX_ASSERTIONS
+    entries = sorted(by_topic.values(), key=lambda e: e.get("ts", ""), reverse=True)
+    kept = entries[:MAX_ASSERTIONS]
+
+    removed = len(all_entries) - len(kept)
+    if removed <= 0:
+        return 0
+
+    # Rewrite atomically
+    lock_path = path.parent / ".assertions.lock"
+    try:
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=str(path.parent), prefix=".assertions.", suffix=".tmp",
+                )
+                with os.fdopen(fd, "w") as f:
+                    for entry in kept:
+                        f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                    f.flush()
+                    if hasattr(fcntl, "F_FULLFSYNC"):
+                        fcntl.fcntl(f.fileno(), fcntl.F_FULLFSYNC)
+                    else:
+                        os.fsync(f.fileno())
+                os.replace(tmp_path, str(path))
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except (IOError, OSError) as e:
+        log_debug(f"compact_assertions failed: {e}", hook_name="memory")
+        return 0
+
+    log_debug(
+        f"Compacted assertions: {removed} removed, {len(kept)} kept",
+        hook_name="memory",
+    )
     return removed
