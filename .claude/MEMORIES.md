@@ -12,36 +12,22 @@
 
 ---
 
-## Memory System v4 (2026-02-01)
+## Memory System v5 (2026-02-01)
 
 **Cross-session learning** via append-only event store in `~/.claude/memory/{project-hash}/events/`.
 
-- **Auto-capture**: Checkpoint requires `key_insight` (>30 chars), `search_terms` (2-7 concept keywords), `category` enum, and optional `memory_that_helped` (event IDs) — archived on every successful stop
-- **Three-layer crash safety**: PreCompact (before compaction) + Stop (clean exit) + SessionEnd (any exit)
-- **Sonnet distillation daemon**: `distill-trigger` at SessionStart detects unprocessed raw transcripts, spawns background `Task(model="sonnet")` to extract LESSON memories
-- **Auto-injection**: Top 10 relevant events injected at SessionStart via deterministic 4-signal scoring (entity 35%, recency 30%, quality 20%, source 15%)
-- **Entity matching**: Concept keywords (tools, errors, techniques, platforms) + file paths (basename, stem, dir)
+- **Auto-capture**: Checkpoint requires `key_insight` (>30 chars), `search_terms` (2-7 concept keywords), `category` enum, optional `problem_type` (controlled vocabulary), optional `core_assertions` (max 5), and optional `memory_that_helped` (event IDs) — archived on every successful stop
+- **Two-layer crash safety**: PreCompact (before compaction) + Stop (clean exit)
+- **Auto-injection**: Top 5 relevant events injected at SessionStart via 2-signal scoring (entity overlap 50%, recency 50%) with entity gate (zero-overlap events rejected outright)
+- **Core assertions**: Persistent `<core-assertions>` block injected before memories — topic-based dedup (last-write-wins), LRU eviction at 20, compaction at SessionStart
+- **Problem-type encoding**: Controlled vocabulary (`race-condition`, `config-mismatch`, `api-change`, `import-resolution`, `state-management`, `crash-safety`, `data-integrity`, `performance`, `tooling`, `dependency-management`) — auto-injected as concept entity for cross-session retrieval
+- **Entity matching**: Multi-tier (exact basename 1.0, stem 0.6, concept 0.5, substring 0.35, dir 0.3) using max() not average()
+- **Gradual freshness curve**: Linear ramp 1.0→0.5 over 48h, then exponential decay (half-life 7d), continuous at boundary
 - **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
+- **Mid-session recall**: 8 recalls/session, 30s cooldown, file-locked injection log
 - **Manual capture**: `/compound` skill for deep LESSON/PROBLEM/CAUSE/FIX documentation
-- **Feedback loop**: Injection logging at SessionStart, utility tracking at Stop, per-event demotion (3+ injections with 0 citations), auto-tuned MIN_SCORE via proportional controller (bounded [0.05, 0.25])
 
-See [docs/index.md](../docs/index.md#memory-system-v4) for full details.
-
----
-
-## Health System (2026-01-31)
-
-**Self-monitoring instrumentation** via `_health.py` + append-only snapshots in `~/.claude/health/{project-hash}/snapshots/`.
-
-- **Auto-capture**: Health snapshot archived at every successful stop (alongside memory event)
-- **SessionStart summary**: `health-aggregator` hook prints warnings (low citation rate, demoted events, stale data)
-- **Sidecar metrics**: `compound-context-loader` writes injection metrics, `session-snapshot` writes cleanup metrics
-- **Manual diagnostics**: `/health` skill generates comprehensive report with recommendations
-- **Storage**: 30-day TTL, 100 snapshot cap, schema versioned (v1)
-
-All `import _health` calls are guarded with try/except — health failures never affect hook primary logic.
-
-See [docs/index.md](../docs/index.md#health-system) for full details.
+See [docs/index.md](../docs/index.md#memory-system-v5) for full details.
 
 ---
 

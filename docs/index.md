@@ -106,11 +106,11 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `revonc-eas-deploy` | /eas, /revonc-deploy, "deploy to testflight", "build ios/android" |
 | `health` | /health, "system health", "how is memory doing", "check health" |
 
-## Registered Hooks (27 scripts)
+## Registered Hooks (20 scripts)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
-| SessionStart | auto-update, session-snapshot, health-aggregator, compound-context-loader, read-docs-reminder, distill-trigger | Init, health summary, memory injection, toolkit update, transcript distillation |
+| SessionStart | auto-update, session-snapshot, compound-context-loader, read-docs-reminder | Init, memory injection, toolkit update |
 | UserPromptSubmit | skill-state-initializer, read-docs-trigger | State files and doc suggestions |
 | PreToolUse (*) | pretooluse-auto-approve | Auto-approve during autonomous mode |
 | PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done + /go Read-gate |
@@ -123,55 +123,32 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | PostToolUse (Bash) | bash-version-tracker, doc-updater-async | Track versions, suggest doc updates |
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
-| Stop | stop-validator | Validate checkpoint, auto-capture memory event + health snapshot |
-| SessionEnd | session-end-archiver | Archive raw transcript on any exit (crash safety) |
-| PreCompact | precompact-capture | Archive transcript + inject summary before compaction |
+| Stop | stop-validator | Validate checkpoint, auto-capture memory event + core assertions |
+| PreCompact | precompact-capture | Inject session summary before compaction |
 | PermissionRequest | permissionrequest-auto-approve | Auto-approve during autonomous mode |
 
 ---
 
-## Memory System (v4)
+## Memory System (v5)
 
 **Append-only event store** for cross-session learning. Events stored in `~/.claude/memory/{project-hash}/events/`.
 
 ### How It Works
 
-1. **Auto-capture** (primary path): `stop-validator` hook archives checkpoint as LESSON-first memory event on every successful stop. Checkpoint requires `key_insight` (>30 chars), `search_terms` (2-7 concept keywords), `category` (enum), and optional `memory_that_helped` (event IDs from `<m>` tags).
+1. **Auto-capture** (primary path): `stop-validator` hook archives checkpoint as LESSON-first memory event on every successful stop. Checkpoint requires `key_insight` (>30 chars), `search_terms` (2-7 concept keywords), `category` (enum), optional `problem_type` (controlled vocabulary), optional `core_assertions` (max 5 topic/assertion pairs), and optional `memory_that_helped` (event IDs from `<m>` tags).
 2. **Manual capture** (deep captures): `/compound` skill for detailed LESSON/PROBLEM/CAUSE/FIX documentation
-3. **Auto-injection**: `compound-context-loader` hook injects top 10 relevant events as structured XML at SessionStart
-4. **Deterministic selection**: 4-signal scoring — entity overlap (35%) + recency (30%) + content quality (20%) + source (15%)
-5. **Three-layer crash safety**:
-   - `precompact-capture` (PreCompact): archives transcript before context compaction + injects summary into post-compaction context
-   - `stop-validator` (Stop): structured LESSON capture on clean exit
-   - `session-end-archiver` (SessionEnd): archives raw transcript on ANY exit (Ctrl+C, crash, context exhaustion)
-6. **Sonnet distillation daemon**: `distill-trigger` (SessionStart) detects unprocessed raw transcripts from previous sessions, suggests background `Task(model="sonnet")` to extract structured LESSON memories via `distill-create-event.py`
-7. **Entity matching**: File-path entities (basename, stem, dir) + concept entities (from `search_terms`) with substring matching
-8. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
-9. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
-
-### Feedback Loop & Auto-Tuning
-
-Memory System v3 includes a closed feedback loop to improve injection quality over time:
-
-1. **Injection logging**: `compound-context-loader` writes `injection-log.json` at SessionStart, recording which events were injected (prevents hallucinated event IDs in `memory_that_helped`)
-2. **Utility tracking**: `stop-validator` validates `memory_that_helped` field against injection log, then records injection/citation counts in `manifest.json` under `"utility"` key
-3. **Per-event demotion**: Events injected 3+ times with 0 citations receive a 0.5 score penalty (50% demotion), events injected 2 times with 0 citations receive 0.25 penalty
-4. **Auto-tuned MIN_SCORE**: Proportional controller adjusts injection threshold based on aggregate citation rate (target: 15%). Activates after 20+ total injections, bounded to [0.05, 0.25]
-5. **Stale utility cleanup**: Utility entries for deleted events are pruned during retention cleanup to keep manifest bounded
-
-**Utility data structure** (in `manifest.json`):
-```json
-{
-  "utility": {
-    "events": {
-      "evt_20260131T143022-12345-a1b2c3": {"injected": 5, "cited": 2},
-      "evt_20260131T150000-67890-d4e5f6": {"injected": 3, "cited": 0}
-    },
-    "total_injected": 47,
-    "total_cited": 8
-  }
-}
-```
+3. **Auto-injection**: `compound-context-loader` hook injects top 5 relevant events as structured XML at SessionStart
+4. **Core assertions**: Persistent `<core-assertions>` block injected before `<memories>` — topic-based dedup (last-write-wins), LRU eviction at 20 entries, compaction at SessionStart
+5. **2-signal scoring**: Entity overlap (50%) + recency (50%) with entity gate (zero-overlap events rejected outright)
+6. **Two-layer crash safety**:
+   - `precompact-capture` (PreCompact): injects session summary into post-compaction context
+   - `stop-validator` (Stop): structured LESSON + core assertions capture on clean exit
+7. **Entity matching**: Multi-tier scoring — exact basename (1.0), stem (0.6), concept keyword (0.5), substring (0.35), directory (0.3) — uses max() not average()
+8. **Gradual freshness curve**: Linear ramp 1.0→0.5 over 48h, then exponential decay anchored at 0.5 (half-life 7d), continuous at boundary
+9. **Problem-type encoding**: Controlled vocabulary (`race-condition`, `config-mismatch`, `api-change`, `import-resolution`, `state-management`, `crash-safety`, `data-integrity`, `performance`, `tooling`, `dependency-management`) — auto-injected as concept entity
+10. **Mid-session recall**: `memory-recall` hook on Read/Grep/Glob triggers, 8 recalls/session, 30s cooldown, file-locked injection log
+11. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
+12. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
 
 ### Storage
 
@@ -179,7 +156,7 @@ Memory System v3 includes a closed feedback loop to improve injection quality ov
 - **Isolation**: Project-scoped via SHA256(git_remote_url | repo_root)
 - **Retention**: 90-day TTL, 500 event cap per project
 - **Format**: JSON events with atomic writes (F_FULLFSYNC + os.replace for crash safety)
-- **Budget**: 10 events, 8000 chars, score-tiered (600/350/200 chars per event)
+- **Budget**: 5 events, 8000 chars, score-tiered (600/350/200 chars per event)
 
 ### Event Schema
 
@@ -187,11 +164,13 @@ Memory System v3 includes a closed feedback loop to improve injection quality ov
 {
   "id": "evt_20260131T143022-12345-a1b2c3",
   "ts": "2026-01-31T14:30:22Z",
+  "v": 1,
   "type": "compound",
   "content": "LESSON: <key insight>\nDONE: <what was done>",
   "entities": ["crash-safety", "atomic-write", "macOS", "_memory.py", "hooks/_memory.py"],
   "source": "compound",
   "category": "gotcha",
+  "problem_type": "crash-safety",
   "meta": {"quality": "rich", "files_changed": ["config/hooks/_memory.py"]}
 }
 ```
@@ -201,35 +180,6 @@ Memory System v3 includes a closed feedback loop to improve injection quality ov
 ```bash
 grep -riwl "keyword" ~/.claude/memory/*/events/
 ```
-
----
-
-## Health System
-
-**Self-monitoring instrumentation** for toolkit health. Tracks memory effectiveness, injection quality, and session diagnostics.
-
-### How It Works
-
-1. **Auto-capture** (at Stop): `stop-validator` archives a health snapshot after each successful stop via `_health.py`
-2. **SessionStart summary**: `health-aggregator` hook prints warnings if previous session had low citation rates or excessive demotions
-3. **Sidecar metrics**: `compound-context-loader` writes injection metrics, `session-snapshot` writes cleanup metrics — both read by `_health.py`
-4. **Manual diagnostics**: `/health` skill generates a comprehensive report with memory health, injection effectiveness, and recommendations
-
-### Storage
-
-- **Location**: `~/.claude/health/{project-hash}/snapshots/health_{timestamp}.json`
-- **Isolation**: Same project hash as memory system (SHA256(git_remote_url | repo_root))
-- **Retention**: 30-day TTL, 100 snapshot cap
-- **Schema**: Versioned (v1) with memory, injection, session, and sidecar sections
-
-### Key Metrics
-
-| Metric | Source | Meaning |
-|--------|--------|---------|
-| Citation rate | manifest utility | Fraction of injected memories that were cited (target: 15%) |
-| Demoted count | manifest utility | Events injected 2+ times with 0 citations |
-| MIN_SCORE tuned | proportional controller | Auto-adjusted injection threshold |
-| Score distribution | injection metrics sidecar | Spread of scores for injected events |
 
 ---
 
@@ -297,7 +247,7 @@ namshub/        # THIS IS THE SOURCE OF TRUTH
 │   ├── CLAUDE.md              # Global instructions (symlinked to ~/.claude/CLAUDE.md)
 │   ├── settings.json          # Hook definitions + ENABLE_TOOL_SEARCH=auto
 │   ├── commands/              # 11 skill definition files (+ 3 skill-commands)
-│   ├── hooks/                 # Python/bash hooks (21 registered)
+│   ├── hooks/                 # Python/bash hooks (20 registered)
 │   └── skills/                # 25 skills ← EDIT HERE
 ├── docs/                      # Documentation
 ├── scripts/                   # install.sh, doctor.sh
@@ -311,6 +261,7 @@ namshub/        # THIS IS THE SOURCE OF TRUTH
 └── memory/                    # Event store (NOT in repo)
     └── {project-hash}/
         ├── events/            # Memory events (JSON)
+        ├── core-assertions.jsonl  # Persistent assertions (JSONL)
         └── manifest.json      # Fast lookup index
 ```
 
