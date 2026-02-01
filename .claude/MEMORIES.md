@@ -4,7 +4,11 @@
 
 **This repo (`namshub`) is the source of truth for all skills, hooks, and configuration.**
 
-`~/.claude/skills/` and `~/.claude/hooks/` are symlinks to this repo's `config/` directory. When you edit skills or hooks (including via `~/.claude/`), you're editing this repo. **Always commit changes to preserve them.**
+`~/.claude/skills/`, `~/.claude/hooks/`, and `~/.claude/CLAUDE.md` are symlinks to this repo's `config/` directory. When you edit skills, hooks, or CLAUDE.md (including via `~/.claude/`), you're editing this repo. **Always commit changes to preserve them.**
+
+### Global CLAUDE.md
+
+`config/CLAUDE.md` is symlinked to `~/.claude/CLAUDE.md` and read by Claude Code at session start in ALL repos. It sets global tool preferences (e.g., Exa MCP over WebSearch). The `exa-search-enforcer` hook hard-blocks WebSearch as a backstop.
 
 ---
 

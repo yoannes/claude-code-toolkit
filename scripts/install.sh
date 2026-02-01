@@ -733,6 +733,13 @@ if [ -d "$CONFIG_DIR/skills" ]; then
     echo "  ✓ skills/"
 fi
 
+# CLAUDE.md (global instructions)
+if [ -f "$CONFIG_DIR/CLAUDE.md" ]; then
+    rm -f "$HOME/.claude/CLAUDE.md"
+    ln -sf "$CONFIG_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+    echo "  ✓ CLAUDE.md"
+fi
+
 # Make hooks executable
 echo "Making hooks executable..."
 if [ -d "$CONFIG_DIR/hooks" ]; then

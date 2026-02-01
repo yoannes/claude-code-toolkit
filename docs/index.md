@@ -115,7 +115,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | PreToolUse (*) | pretooluse-auto-approve | Auto-approve during autonomous mode |
 | PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done + /go Read-gate |
 | PreToolUse (Bash) | deploy-enforcer, azure-command-guard | Block deploys, guard Azure CLI |
-| PreToolUse (WebSearch) | exa-search-enforcer | Remind to use Exa MCP instead |
+| PreToolUse (WebSearch) | exa-search-enforcer | Block WebSearch, redirect to Exa MCP |
 | PreToolUse (ExitPlanMode) | lite-heavy-enforcer | Block until Lite Heavy done |
 | PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
 | PostToolUse (Read/Grep/Glob) | lite-heavy-tracker, go-context-tracker | Track Lite Heavy + /go Read-gate |
@@ -294,6 +294,7 @@ Skills without MCP dependencies (`/go`, `/compound`, `/burndown`, `/qa`, `/deslo
 ```
 namshub/        # THIS IS THE SOURCE OF TRUTH
 ├── config/
+│   ├── CLAUDE.md              # Global instructions (symlinked to ~/.claude/CLAUDE.md)
 │   ├── settings.json          # Hook definitions + ENABLE_TOOL_SEARCH=auto
 │   ├── commands/              # 11 skill definition files (+ 3 skill-commands)
 │   ├── hooks/                 # Python/bash hooks (21 registered)
@@ -303,6 +304,7 @@ namshub/        # THIS IS THE SOURCE OF TRUTH
 └── README.md
 
 ~/.claude/                     # SYMLINKED TO REPO + MEMORY
+├── CLAUDE.md → config/CLAUDE.md  # Global instructions (search preferences)
 ├── skills → config/skills     # Symlink - edits here go to repo
 ├── hooks → config/hooks       # Symlink - edits here go to repo
 ├── settings.json → config/settings.json
