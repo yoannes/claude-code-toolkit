@@ -5,9 +5,9 @@ Compound Context Loader - SessionStart Hook
 Injects relevant memory events at session start. Reads from the
 append-only event store at ~/.claude/memory/{project-hash}/events/.
 
-Selection: 4-signal deterministic scoring with utility-based feedback loop.
-Scoring: entity overlap 35%, recency 30%, content quality 20%,
-source quality 15%. Entity matching: multi-tier set lookups.
+Selection: 2-signal deterministic scoring with entity gate.
+Scoring: entity overlap 50%, recency 50%. Entity gate rejects
+zero-overlap events outright. Multi-tier entity matching.
 
 Part of the Compound Memory System that enables cross-session learning.
 """
@@ -23,9 +23,9 @@ from pathlib import Path
 # Add hooks directory to path for shared imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _common import log_debug
+from _common import log_debug, VERSION_TRACKING_EXCLUSIONS
 
-MAX_EVENTS = 10
+MAX_EVENTS = 5
 MAX_CHARS = 8000
 MIN_SCORE = 0.12  # Below this: zero entity overlap + low recency = noise
 
@@ -47,18 +47,18 @@ def _get_changed_files(cwd: str) -> set[str]:
     """Get files changed in recent commits + uncommitted changes."""
     files = set()
     try:
-        # Uncommitted changes
+        # Uncommitted changes (exclude .claude/ and other metadata)
         result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
+            ["git", "diff", "--name-only", "HEAD", "--"] + VERSION_TRACKING_EXCLUSIONS,
             capture_output=True, text=True, timeout=5, cwd=cwd,
         )
         for line in result.stdout.strip().split("\n"):
             if line.strip():
                 files.add(line.strip())
 
-        # Last 5 commits
+        # Last 5 commits (exclude .claude/ and other metadata)
         result = subprocess.run(
-            ["git", "log", "--name-only", "--format=", "-5"],
+            ["git", "log", "--name-only", "--format=", "-5", "--"] + VERSION_TRACKING_EXCLUSIONS,
             capture_output=True, text=True, timeout=5, cwd=cwd,
         )
         for line in result.stdout.strip().split("\n"):
@@ -90,14 +90,25 @@ def _build_file_components(changed_files: set[str]) -> tuple[set, set, set]:
 
 
 def _recency_score(event: dict) -> float:
-    """Exponential decay with half-life 7 days, freshness boost for <24h."""
+    """Gradual freshness curve for <48h, continuous exponential decay after.
+
+    Replaces the old binary 1.0 boost for <24h which caused all recent events
+    to score identically (scoring collapse). Now: linear ramp from 1.0→0.5
+    over 48 hours, then exponential decay anchored at 0.5 (half-life 7d).
+    The curve is continuous at the 48h boundary.
+    """
     ts = event.get("ts", "")
     try:
         event_time = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        age_days = (datetime.now(timezone.utc) - event_time).total_seconds() / 86400
-        if age_days < 1:
-            return 1.0  # freshness boost
-        return 0.5 ** (age_days / 7.0)  # half-life 7 days
+        age_hours = (datetime.now(timezone.utc) - event_time).total_seconds() / 3600
+        if age_hours < 0:
+            age_hours = 0
+        if age_hours < 48:
+            # Linear ramp: 1.0 at 0h → 0.5 at 48h
+            return 1.0 - (age_hours / 96.0)
+        # Exponential decay anchored at 0.5 at 48h, half-life 7 days
+        age_days_past_48h = (age_hours - 48) / 24.0
+        return 0.5 * (0.5 ** (age_days_past_48h / 7.0))
     except (ValueError, TypeError):
         return 0.3
 
@@ -156,7 +167,9 @@ def _content_quality_score(event: dict) -> float:
     content = event.get("content", "")
     entities = event.get("entities", [])
 
-    has_lesson = content.startswith("LESSON:") and len(content.split("\n")[0]) > 35
+    has_lesson = (
+        content.startswith("LESSON:") or content.startswith("SCHEMA:")
+    ) and len(content.split("\n")[0]) > 35
     has_terms = len(entities) >= 3
 
     if has_lesson and has_terms:
@@ -171,15 +184,16 @@ def _content_quality_score(event: dict) -> float:
 def _score_event(
     event: dict, basenames: set, stems: set, dirs: set,
 ) -> float:
-    """Score event: entity overlap (35%) + recency (30%) + quality (20%) + source (15%)."""
+    """Score event: entity overlap (50%) + recency (50%).
+
+    2-signal scoring replaces the old 4-signal system where quality and source
+    signals didn't discriminate (all LESSON events scored identically). The
+    entity gate in main() already filters zero-overlap events, so the two
+    remaining signals provide meaningful ranking.
+    """
     entity_score = _entity_overlap_score(event, basenames, stems, dirs)
     recency = _recency_score(event)
-    quality = _content_quality_score(event)
-
-    source = event.get("source", "")
-    source_score = 1.0 if source == "compound" else 0.7 if source == "auto-capture" else 0.2
-
-    return 0.35 * entity_score + 0.30 * recency + 0.20 * quality + 0.15 * source_score
+    return 0.5 * entity_score + 0.5 * recency
 
 
 # ============================================================================
@@ -245,7 +259,11 @@ def _format_injection(scored_events: list[tuple[dict, float]]) -> str:
         if not content:
             continue
 
-        budget = _budget_for_score(score)
+        # Schemas always get full budget (consolidated knowledge)
+        if event.get("type") == "schema":
+            budget = BUDGET_HIGH
+        else:
+            budget = _budget_for_score(score)
         content = _truncate_content(content, budget)
 
         entities = event.get("entities", [])
@@ -334,6 +352,10 @@ def main():
 
     # Filter bootstrap events (commit-message-level noise)
     events = [e for e in events if e.get("source") not in BOOTSTRAP_SOURCES]
+
+    # Filter events superseded by schemas (archived_by set during consolidation)
+    events = [e for e in events if not e.get("meta", {}).get("archived_by")]
+
     if not events:
         log_debug(
             "No non-bootstrap events found",
@@ -344,33 +366,22 @@ def main():
     # Get changed files for context
     changed_files = _get_changed_files(cwd)
 
-    # Deterministic 4-signal scoring
+    # 2-signal scoring with entity gate
     basenames, stems, dirs = _build_file_components(changed_files)
-    scored = [(event, _score_event(event, basenames, stems, dirs)) for event in events]
+    scored = []
+    gated_count = 0
+    for event in events:
+        entity_score = _entity_overlap_score(event, basenames, stems, dirs)
+        # Entity gate: reject events with zero entity overlap outright.
+        # This single check prevents more wasted injections than the entire
+        # old feedback loop (demotion + auto-tuned MIN_SCORE).
+        if entity_score == 0.0:
+            gated_count += 1
+            continue
+        score = _score_event(event, basenames, stems, dirs)
+        if score >= MIN_SCORE:
+            scored.append((event, score))
     scored.sort(key=lambda x: x[1], reverse=True)
-
-    # Apply per-event demotion from utility tracking (feedback loop)
-    demoted_count = 0
-    try:
-        from _memory import get_event_demotion
-        for i, (event, score) in enumerate(scored):
-            demotion = get_event_demotion(cwd, event.get("id", ""))
-            if demotion > 0:
-                scored[i] = (event, score * (1.0 - demotion))
-                demoted_count += 1
-        scored.sort(key=lambda x: x[1], reverse=True)
-    except (ImportError, Exception):
-        pass
-
-    # Apply minimum score threshold (auto-tuned from utility data)
-    try:
-        from _memory import get_tuned_min_score
-        min_score = get_tuned_min_score(cwd, default=MIN_SCORE)
-    except (ImportError, Exception):
-        min_score = MIN_SCORE
-    pre_filter_count = len(scored)
-    scored = [(e, s) for e, s in scored if s >= min_score]
-    filtered_count = pre_filter_count - len(scored)
 
     # Take top N
     top_events = scored[:MAX_EVENTS]
@@ -387,13 +398,18 @@ def main():
     log_debug(
         "Injecting memory context",
         hook_name="compound-context-loader",
-        parsed_data={"events_count": len(top_events), "output_chars": len(output)},
+        parsed_data={
+            "events_count": len(top_events),
+            "gated_count": gated_count,
+            "output_chars": len(output),
+        },
     )
 
     print(output)
 
-    # Write injection log for feedback loop (read by stop-validator)
+    # Write injection log for mid-session recall (read by memory-recall.py)
     try:
+        from _memory import atomic_write_json
         session_id = ""
         snap_path = Path(cwd) / ".claude" / "session-snapshot.json"
         if snap_path.exists():
@@ -407,23 +423,7 @@ def main():
                 for i, (e, s) in enumerate(top_events) if e.get("id")
             ],
         }
-        log_path.write_text(json.dumps(log_data, indent=2))
-    except Exception:
-        pass
-
-    # Write health injection metrics sidecar (read by _health.py)
-    try:
-        metrics_path = Path(cwd) / ".claude" / "health-injection-metrics.json"
-        metrics = {
-            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "total_candidates": len(events),
-            "demoted_count": demoted_count,
-            "filtered_by_min_score": filtered_count,
-            "min_score_used": round(min_score, 3),
-            "injected_count": len(top_events),
-            "scores": [round(s, 3) for _, s in top_events],
-        }
-        metrics_path.write_text(json.dumps(metrics, indent=2))
+        atomic_write_json(log_path, log_data)
     except Exception:
         pass
 

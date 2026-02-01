@@ -212,6 +212,7 @@ def append_event(
     event_id = f"evt_{ts}-{os.getpid()}-{suffix}"
 
     event = {
+        "v": 1,
         "id": event_id,
         "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "type": event_type,
