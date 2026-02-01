@@ -5,19 +5,27 @@ Compound Context Loader - SessionStart Hook
 Injects relevant memory events at session start. Reads from the
 append-only event store at ~/.claude/memory/{project-hash}/events/.
 
-Scoring: 4-signal (entity overlap 35%, recency 30%, content quality 20%,
-source quality 15%). Entity matching: multi-tier set lookups (basename,
-stem, directory, concept). Injection: structured XML with score-tiered
-budget and metadata attributes.
+Hybrid Selection: Haiku-based semantic selection with deterministic fallback.
+When Haiku is available, it selects memories based on git context understanding.
+Falls back to 4-signal deterministic scoring if Haiku fails or is unavailable.
+
+Scoring (fallback): entity overlap 35%, recency 30%, content quality 20%,
+source quality 15%. Entity matching: multi-tier set lookups.
 
 Part of the Compound Memory System that enables cross-session learning.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -184,6 +192,278 @@ def _score_event(
 
 
 # ============================================================================
+# Haiku-based Semantic Selection (with caching and fallback)
+# ============================================================================
+
+HAIKU_MODEL = "claude-3-5-haiku-20241022"
+HAIKU_TIMEOUT = 120  # seconds - user accepts 1-3 minute wait
+HAIKU_MAX_TOKENS = 300
+CACHE_TTL_SECONDS = 3600  # 1 hour
+
+
+def _gather_git_context(cwd: str) -> dict:
+    """Gather git context for Haiku selection."""
+    context = {
+        "branch": "unknown",
+        "commit_subjects": [],
+        "changed_files": [],
+        "project_name": Path(cwd).name,
+    }
+
+    try:
+        # Current branch
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=cwd,
+        )
+        if result.returncode == 0:
+            context["branch"] = result.stdout.strip()
+
+        # Recent commit subjects
+        result = subprocess.run(
+            ["git", "log", "--format=%s", "-5"],
+            capture_output=True, text=True, timeout=5, cwd=cwd,
+        )
+        if result.returncode == 0:
+            context["commit_subjects"] = [
+                line.strip() for line in result.stdout.strip().split("\n")
+                if line.strip()
+            ][:5]
+
+        # Changed files (already available from _get_changed_files)
+        # Will be passed in separately
+
+        # Project name from remote
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5, cwd=cwd,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            url = result.stdout.strip()
+            name = url.split("/")[-1].replace(".git", "")
+            context["project_name"] = name
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    return context
+
+
+def _compute_cache_key(events: list[dict], changed_files: set[str]) -> str:
+    """Generate cache key from memory IDs + git state."""
+    # Component 1: Event IDs (detect new memories)
+    event_ids = sorted(e.get("id", "") for e in events)
+    events_hash = hashlib.sha256("|".join(event_ids).encode()).hexdigest()[:8]
+
+    # Component 2: Changed file basenames
+    basenames = sorted(set(f.split("/")[-1] for f in changed_files))
+    files_hash = hashlib.sha256("|".join(basenames).encode()).hexdigest()[:8]
+
+    return f"{events_hash}_{files_hash}"
+
+
+def _get_selection_cache(cwd: str, cache_key: str) -> list[str] | None:
+    """Get cached Haiku selection if fresh (<1h)."""
+    try:
+        from _memory import get_memory_dir
+        cache_path = get_memory_dir(cwd).parent / "haiku-cache.json"
+        if not cache_path.exists():
+            return None
+
+        cache = json.loads(cache_path.read_text())
+        entry = cache.get(cache_key)
+        if not entry:
+            return None
+
+        # Check TTL
+        cached_at = entry.get("cached_at", 0)
+        if time.time() - cached_at > CACHE_TTL_SECONDS:
+            return None
+
+        return entry.get("selected_ids")
+    except (json.JSONDecodeError, IOError, OSError, ImportError):
+        return None
+
+
+def _save_selection_cache(cwd: str, cache_key: str, selected_ids: list[str]) -> None:
+    """Save Haiku selection to cache."""
+    try:
+        from _memory import get_memory_dir, atomic_write_json
+        cache_path = get_memory_dir(cwd).parent / "haiku-cache.json"
+
+        cache = {}
+        if cache_path.exists():
+            try:
+                cache = json.loads(cache_path.read_text())
+            except json.JSONDecodeError:
+                cache = {}
+
+        # LRU-style cleanup: keep only last 10 entries
+        if len(cache) > 10:
+            sorted_entries = sorted(
+                cache.items(),
+                key=lambda x: x[1].get("cached_at", 0)
+            )
+            for k, _ in sorted_entries[:len(cache) - 10]:
+                del cache[k]
+
+        cache[cache_key] = {
+            "selected_ids": selected_ids,
+            "cached_at": time.time(),
+        }
+
+        atomic_write_json(cache_path, cache)
+    except (IOError, OSError, ImportError):
+        pass
+
+
+def _build_haiku_prompt(events: list[dict], git_context: dict, changed_files: set[str]) -> str:
+    """Build prompt for Haiku memory selection."""
+    now = datetime.now(timezone.utc)
+
+    # Build memory summaries
+    memory_lines = []
+    for i, event in enumerate(events[:30]):
+        content = event.get("content", "")[:150].replace("\n", " ")
+        age = _human_age(event.get("ts", ""), now)
+        cat = event.get("category", "session")
+        entities = event.get("entities", [])[:4]
+        memory_lines.append(
+            f"[m{i+1}] age={age} cat={cat} entities={entities} | {content}"
+        )
+
+    files_list = list(changed_files)[:15]
+
+    return f"""Select memories relevant to the upcoming coding session.
+
+GIT CONTEXT:
+- Branch: {git_context.get('branch', 'unknown')}
+- Recent commits: {', '.join(git_context.get('commit_subjects', [])[:3])}
+- Changed files: {', '.join(files_list)}
+- Project: {git_context.get('project_name', 'unknown')}
+
+MEMORIES ({len(events)}):
+{chr(10).join(memory_lines)}
+
+Select 8-12 most relevant memories. Semantic relevance > exact keyword match.
+Return ONLY valid JSON: {{"selected": ["m1", "m3", ...]}}"""
+
+
+def _parse_haiku_response(text: str, events: list[dict]) -> list[str] | None:
+    """Parse Haiku's JSON response to extract selected event IDs."""
+    # Try to extract JSON from response (may have markdown wrapping)
+    json_match = re.search(r'\{[^}]+\}', text)
+    if not json_match:
+        return None
+
+    try:
+        result = json.loads(json_match.group())
+        selected_refs = result.get("selected", [])
+        if not isinstance(selected_refs, list):
+            return None
+
+        # Convert m1, m2, ... back to event IDs
+        event_ids = []
+        for ref in selected_refs:
+            if isinstance(ref, str) and ref.startswith("m"):
+                try:
+                    idx = int(ref.replace("m", "")) - 1
+                    if 0 <= idx < len(events):
+                        event_id = events[idx].get("id")
+                        if event_id:
+                            event_ids.append(event_id)
+                except ValueError:
+                    continue
+
+        return event_ids if event_ids else None
+    except json.JSONDecodeError:
+        return None
+
+
+def _call_haiku_sdk(api_key: str, prompt: str, events: list[dict]) -> list[str] | None:
+    """Call Haiku via anthropic SDK."""
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(
+            api_key=api_key,
+            max_retries=1,
+            timeout=HAIKU_TIMEOUT,
+        )
+
+        response = client.messages.create(
+            model=HAIKU_MODEL,
+            max_tokens=HAIKU_MAX_TOKENS,
+            system="You are a memory relevance selector. Output ONLY valid JSON.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        return _parse_haiku_response(response.content[0].text, events)
+
+    except Exception as e:
+        log_debug(f"Haiku SDK error: {e}", hook_name="compound-context-loader")
+        return None
+
+
+def _call_haiku_urllib(api_key: str, prompt: str, events: list[dict]) -> list[str] | None:
+    """Call Haiku via stdlib urllib (fallback when SDK not installed)."""
+    payload = {
+        "model": HAIKU_MODEL,
+        "max_tokens": HAIKU_MAX_TOKENS,
+        "system": "You are a memory relevance selector. Output ONLY valid JSON.",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    request = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=HAIKU_TIMEOUT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            text = result.get("content", [{}])[0].get("text", "")
+            return _parse_haiku_response(text, events)
+    except urllib.error.HTTPError as e:
+        log_debug(f"Haiku HTTP {e.code}", hook_name="compound-context-loader")
+        return None
+    except urllib.error.URLError as e:
+        log_debug(f"Haiku network error: {e}", hook_name="compound-context-loader")
+        return None
+    except (json.JSONDecodeError, KeyError, IndexError, TimeoutError) as e:
+        log_debug(f"Haiku parse error: {e}", hook_name="compound-context-loader")
+        return None
+
+
+def _call_haiku_selection(
+    events: list[dict],
+    git_context: dict,
+    changed_files: set[str],
+) -> list[str] | None:
+    """Use Haiku to select relevant memories. Returns event IDs or None on failure."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        log_debug("No ANTHROPIC_API_KEY, using deterministic fallback",
+                  hook_name="compound-context-loader")
+        return None
+
+    prompt = _build_haiku_prompt(events, git_context, changed_files)
+
+    # Try SDK first, fall back to urllib
+    try:
+        import anthropic  # noqa: F401
+        return _call_haiku_sdk(api_key, prompt, events)
+    except ImportError:
+        return _call_haiku_urllib(api_key, prompt, events)
+
+
+# ============================================================================
 # Injection Formatting
 # ============================================================================
 
@@ -342,37 +622,94 @@ def main():
         )
         sys.exit(0)
 
-    # Score events by relevance
+    # Get changed files for context
     changed_files = _get_changed_files(cwd)
-    basenames, stems, dirs = _build_file_components(changed_files)
-    scored = [(event, _score_event(event, basenames, stems, dirs)) for event in events]
-    scored.sort(key=lambda x: x[1], reverse=True)
 
-    # Apply per-event demotion from utility tracking (feedback loop)
-    demoted_count = 0
-    try:
-        from _memory import get_event_demotion
-        for i, (event, score) in enumerate(scored):
-            demotion = get_event_demotion(cwd, event.get("id", ""))
-            if demotion > 0:
-                scored[i] = (event, score * (1.0 - demotion))
-                demoted_count += 1
-        scored.sort(key=lambda x: x[1], reverse=True)
-    except (ImportError, Exception):
-        pass
+    # Try Haiku-based semantic selection (with caching)
+    haiku_selected_ids = None
+    haiku_used = False
+    cache_hit = False
 
-    # Apply minimum score threshold (auto-tuned from utility data)
-    try:
-        from _memory import get_tuned_min_score
-        min_score = get_tuned_min_score(cwd, default=MIN_SCORE)
-    except (ImportError, Exception):
+    # Check cache first
+    cache_key = _compute_cache_key(events, changed_files)
+    haiku_selected_ids = _get_selection_cache(cwd, cache_key)
+
+    if haiku_selected_ids is not None:
+        cache_hit = True
+        haiku_used = True
+        log_debug(
+            f"Haiku cache hit: {len(haiku_selected_ids)} memories",
+            hook_name="compound-context-loader",
+        )
+    else:
+        # Cache miss: call Haiku
+        git_context = _gather_git_context(cwd)
+        git_context["changed_files"] = list(changed_files)[:20]
+
+        log_debug(
+            "Calling Haiku for memory selection...",
+            hook_name="compound-context-loader",
+        )
+        haiku_selected_ids = _call_haiku_selection(events, git_context, changed_files)
+
+        if haiku_selected_ids:
+            haiku_used = True
+            _save_selection_cache(cwd, cache_key, haiku_selected_ids)
+            log_debug(
+                f"Haiku selected {len(haiku_selected_ids)} memories",
+                hook_name="compound-context-loader",
+            )
+
+    # Build final selection
+    if haiku_used and haiku_selected_ids:
+        # Use Haiku's selection - preserve order, assign high scores
+        selected_id_set = set(haiku_selected_ids)
+        id_to_event = {e.get("id"): e for e in events}
+        top_events = []
+        for i, eid in enumerate(haiku_selected_ids[:MAX_EVENTS]):
+            event = id_to_event.get(eid)
+            if event:
+                # Assign descending scores for Haiku-selected memories
+                score = 0.95 - (i * 0.05)
+                top_events.append((event, max(score, 0.5)))
+        demoted_count = 0
+        filtered_count = 0
         min_score = MIN_SCORE
-    pre_filter_count = len(scored)
-    scored = [(e, s) for e, s in scored if s >= min_score]
-    filtered_count = pre_filter_count - len(scored)
+    else:
+        # Fallback: deterministic 4-signal scoring
+        log_debug(
+            "Using deterministic fallback",
+            hook_name="compound-context-loader",
+        )
+        basenames, stems, dirs = _build_file_components(changed_files)
+        scored = [(event, _score_event(event, basenames, stems, dirs)) for event in events]
+        scored.sort(key=lambda x: x[1], reverse=True)
 
-    # Take top N
-    top_events = scored[:MAX_EVENTS]
+        # Apply per-event demotion from utility tracking (feedback loop)
+        demoted_count = 0
+        try:
+            from _memory import get_event_demotion
+            for i, (event, score) in enumerate(scored):
+                demotion = get_event_demotion(cwd, event.get("id", ""))
+                if demotion > 0:
+                    scored[i] = (event, score * (1.0 - demotion))
+                    demoted_count += 1
+            scored.sort(key=lambda x: x[1], reverse=True)
+        except (ImportError, Exception):
+            pass
+
+        # Apply minimum score threshold (auto-tuned from utility data)
+        try:
+            from _memory import get_tuned_min_score
+            min_score = get_tuned_min_score(cwd, default=MIN_SCORE)
+        except (ImportError, Exception):
+            min_score = MIN_SCORE
+        pre_filter_count = len(scored)
+        scored = [(e, s) for e, s in scored if s >= min_score]
+        filtered_count = pre_filter_count - len(scored)
+
+        # Take top N
+        top_events = scored[:MAX_EVENTS]
 
     # Format as structured XML
     output = _format_injection(top_events)
@@ -421,6 +758,8 @@ def main():
             "min_score_used": round(min_score, 3),
             "injected_count": len(top_events),
             "scores": [round(s, 3) for _, s in top_events],
+            "haiku_used": haiku_used,
+            "haiku_cache_hit": cache_hit,
         }
         metrics_path.write_text(json.dumps(metrics, indent=2))
     except Exception:

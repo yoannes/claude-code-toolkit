@@ -27,7 +27,7 @@
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/compound-context-loader.py\"",
-            "timeout": 5
+            "timeout": 120
           },
           {
             "type": "command",
@@ -57,7 +57,7 @@
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/compound-context-loader.py\"",
-            "timeout": 5
+            "timeout": 120
           },
           {
             "type": "command",

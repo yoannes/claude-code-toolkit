@@ -137,10 +137,14 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 1. **Auto-capture** (primary path): `stop-validator` hook archives checkpoint as LESSON-first memory event on every successful stop. Checkpoint requires `key_insight` (>30 chars), `search_terms` (2-7 concept keywords), `category` (enum), and optional `memory_that_helped` (event IDs from `<m>` tags).
 2. **Manual capture** (deep captures): `/compound` skill for detailed LESSON/PROBLEM/CAUSE/FIX documentation
 3. **Auto-injection**: `compound-context-loader` hook injects top 10 relevant events as structured XML at SessionStart
-4. **Scoring**: 4-signal ranking — entity overlap (35%) + recency (30%) + content quality (20%) + source (15%)
-5. **Entity matching**: File-path entities (basename, stem, dir) + concept entities (from `search_terms`) with substring matching
-6. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
-7. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
+4. **Hybrid selection**: Haiku-based semantic selection with deterministic fallback
+   - **Haiku path**: Uses git context (branch, commits, changed files) to select semantically relevant memories
+   - **Caching**: 1-hour TTL cache keyed by (event_ids + changed_files), stored in `haiku-cache.json`
+   - **Fallback**: If Haiku fails or no API key, falls back to 4-signal deterministic scoring
+5. **Scoring (fallback)**: 4-signal ranking — entity overlap (35%) + recency (30%) + content quality (20%) + source (15%)
+6. **Entity matching**: File-path entities (basename, stem, dir) + concept entities (from `search_terms`) with substring matching
+7. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
+8. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
 
 ### Feedback Loop & Auto-Tuning
 
