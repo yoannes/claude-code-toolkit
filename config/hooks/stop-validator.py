@@ -295,10 +295,14 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
     """Archive completion checkpoint as a memory event.
 
     This is the PRIMARY capture path — zero user effort.
-    Runs on every successful stop with code changes.
+    Runs on every successful stop.
 
     v3: Model-provided search_terms as primary entities, lesson-first
     content with truncated context, top-level category, quality metadata.
+
+    v4 (2026-02-01): Raw transcript archival moved to SessionEnd hook
+    (session-end-archiver.py) which fires on ALL exits including crashes.
+    This function now only captures structured memory events.
     """
     try:
         from _memory import append_event
@@ -313,9 +317,9 @@ def _auto_capture_memory(cwd: str, checkpoint: dict) -> None:
     if not what_was_done or len(what_was_done) < 20:
         return
 
-    # Skip if no code changes
-    if not self_report.get("code_changes_made", False):
-        return
+    # NOTE: code_changes_made gate REMOVED (2026-02-01)
+    # The checkpoint validation already proves work happened.
+    # Git state (clean after commit) is irrelevant to memory capture.
 
     # Build LESSON-first content (lesson IS the memory; done is context)
     content_parts = []

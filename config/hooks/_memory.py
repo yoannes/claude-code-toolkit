@@ -238,24 +238,43 @@ def append_event(
 
 
 def _update_manifest(event_dir: Path, new_event_id: str) -> None:
-    """Update manifest with new event ID. Best-effort, non-blocking."""
+    """Update manifest with new event ID. Uses file locking for concurrent safety.
+
+    File locking prevents race conditions when parallel Claude sessions
+    both try to update the manifest simultaneously.
+    """
     manifest_path = event_dir.parent / MANIFEST_NAME
+    lock_path = event_dir.parent / ".manifest.lock"
+
     try:
-        manifest = {}
-        if manifest_path.exists():
-            raw = manifest_path.read_text()
-            if raw.strip():
-                manifest = json.loads(raw)
+        # Create lock file and acquire exclusive lock
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "w") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (IOError, OSError):
+                # Another process holds the lock - skip this update
+                # Manifest is a cache, will be rebuilt on read miss
+                return
 
-        recent = manifest.get("recent", [])
-        recent.insert(0, new_event_id)
-        recent = recent[:50]  # Keep top 50
+            try:
+                manifest = {}
+                if manifest_path.exists():
+                    raw = manifest_path.read_text()
+                    if raw.strip():
+                        manifest = json.loads(raw)
 
-        manifest["recent"] = recent
-        manifest["total_count"] = manifest.get("total_count", 0) + 1
-        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+                recent = manifest.get("recent", [])
+                recent.insert(0, new_event_id)
+                recent = recent[:50]  # Keep top 50
 
-        atomic_write_json(manifest_path, manifest)
+                manifest["recent"] = recent
+                manifest["total_count"] = manifest.get("total_count", 0) + 1
+                manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+                atomic_write_json(manifest_path, manifest)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
     except (json.JSONDecodeError, IOError, OSError):
         pass  # Manifest is a cache — will be rebuilt on read miss
 
@@ -386,6 +405,163 @@ def cleanup_old_events(cwd: str) -> int:
 
 
 # ============================================================================
+# Raw Transcript Archive (Phase 2: Safety Net)
+# ============================================================================
+
+
+def get_raw_dir(cwd: str) -> Path:
+    """Get the raw transcript directory for a project, creating if needed."""
+    project_hash = get_project_hash(cwd)
+    raw_dir = MEMORY_ROOT / project_hash / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    return raw_dir
+
+
+def archive_raw_transcript(cwd: str) -> Path | None:
+    """Archive session transcript for async distillation.
+
+    This is the PRIMARY safety net - captures full session context even if
+    checkpoint is malformed or validation fails. The async daemon distills
+    these into structured memories later.
+
+    Returns the archive path if successful, None otherwise.
+    """
+    # Look for session transcript in .claude/
+    transcript_path = Path(cwd) / ".claude" / "session-transcript.jsonl"
+    if not transcript_path.exists():
+        # Try alternative locations
+        for alt in [
+            Path(cwd) / ".claude" / "transcript.jsonl",
+            Path(cwd) / ".claude" / "conversation.jsonl",
+        ]:
+            if alt.exists():
+                transcript_path = alt
+                break
+        else:
+            log_debug(
+                "No session transcript found to archive",
+                hook_name="memory",
+            )
+            return None
+
+    try:
+        raw_dir = get_raw_dir(cwd)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        suffix = uuid4().hex[:6]
+        dest = raw_dir / f"session_{ts}_{suffix}.jsonl"
+
+        # Copy transcript atomically
+        import shutil
+        shutil.copy2(transcript_path, dest)
+
+        log_debug(
+            f"Raw transcript archived: {dest.name}",
+            hook_name="memory",
+            parsed_data={"size_bytes": dest.stat().st_size},
+        )
+        return dest
+    except Exception as e:
+        log_debug(f"Raw archive failed: {e}", hook_name="memory")
+        return None
+
+
+def archive_precompact_snapshot(cwd: str, session_id: str = "") -> Path | None:
+    """Archive session transcript BEFORE context compaction.
+
+    Similar to archive_raw_transcript() but with 'precompact_' prefix
+    and session_id in the filename for pairing with SessionEnd archives.
+
+    Returns the archive path if successful, None otherwise.
+    """
+    transcript_path = Path(cwd) / ".claude" / "session-transcript.jsonl"
+    if not transcript_path.exists():
+        for alt in [
+            Path(cwd) / ".claude" / "transcript.jsonl",
+            Path(cwd) / ".claude" / "conversation.jsonl",
+        ]:
+            if alt.exists():
+                transcript_path = alt
+                break
+        else:
+            log_debug(
+                "No session transcript found for precompact snapshot",
+                hook_name="memory",
+            )
+            return None
+
+    try:
+        raw_dir = get_raw_dir(cwd)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        sid = session_id[:8] if session_id else uuid4().hex[:6]
+        dest = raw_dir / f"precompact_{ts}_{sid}.jsonl"
+
+        import shutil
+        shutil.copy2(transcript_path, dest)
+
+        log_debug(
+            f"PreCompact snapshot archived: {dest.name}",
+            hook_name="memory",
+            parsed_data={"size_bytes": dest.stat().st_size},
+        )
+        return dest
+    except Exception as e:
+        log_debug(f"PreCompact archive failed: {e}", hook_name="memory")
+        return None
+
+
+def cleanup_old_raw_transcripts(cwd: str, max_age_days: int = 7, max_count: int = 50) -> int:
+    """Remove old raw transcripts after they've been processed.
+
+    Raw transcripts are temporary - kept only until the async daemon
+    distills them into structured memories. Default: 7 days, 50 files max.
+    """
+    raw_dir = get_raw_dir(cwd)
+    now = time.time()
+    cutoff = now - (max_age_days * 24 * 3600)
+    removed = 0
+
+    entries = []
+    for f in raw_dir.glob("session_*.jsonl"):
+        try:
+            mtime = f.stat().st_mtime
+            entries.append((mtime, f))
+        except OSError:
+            continue
+
+    # Remove expired
+    for mtime, f in entries:
+        if mtime < cutoff:
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                pass
+
+    # Enforce cap
+    remaining = [(m, f) for m, f in entries if m >= cutoff]
+    remaining.sort(reverse=True)
+    if len(remaining) > max_count:
+        for _, f in remaining[max_count:]:
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                pass
+
+    if removed:
+        log_debug(f"Cleaned up {removed} old raw transcripts", hook_name="memory")
+
+    # Prune distillation manifest for deleted transcripts
+    try:
+        from _distill import cleanup_distill_manifest
+        cleanup_distill_manifest(raw_dir)
+    except (ImportError, Exception):
+        pass
+
+    return removed
+
+
+# ============================================================================
 # Utility Tracking (Feedback Loop)
 # ============================================================================
 
@@ -491,6 +667,7 @@ def _cleanup_stale_utility(event_dir: Path) -> None:
     """Prune utility entries for events that no longer exist.
 
     Called during cleanup_old_events to keep utility data bounded.
+    Also recalculates aggregate totals to prevent counter drift.
     """
     manifest_path = event_dir.parent / MANIFEST_NAME
     try:
@@ -508,10 +685,23 @@ def _cleanup_stale_utility(event_dir: Path) -> None:
 
         if len(pruned) < len(events_util):
             utility["events"] = pruned
+
+            # CRITICAL: Recalculate aggregates from surviving events to prevent drift
+            # Without this, total_injected/total_cited accumulate forever while
+            # individual event entries get pruned, causing citation_rate → 0
+            utility["total_injected"] = sum(
+                e.get("injected", 0) for e in pruned.values()
+            )
+            utility["total_cited"] = sum(
+                e.get("cited", 0) for e in pruned.values()
+            )
+
             manifest["utility"] = utility
             atomic_write_json(manifest_path, manifest)
             log_debug(
-                f"Pruned {len(events_util) - len(pruned)} stale utility entries",
+                f"Pruned {len(events_util) - len(pruned)} stale utility entries, "
+                f"recalculated aggregates: injected={utility['total_injected']}, "
+                f"cited={utility['total_cited']}",
                 hook_name="memory",
             )
     except (json.JSONDecodeError, IOError, OSError):

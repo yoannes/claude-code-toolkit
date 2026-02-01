@@ -106,11 +106,11 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `revonc-eas-deploy` | /eas, /revonc-deploy, "deploy to testflight", "build ios/android" |
 | `health` | /health, "system health", "how is memory doing", "check health" |
 
-## Registered Hooks (23 scripts)
+## Registered Hooks (27 scripts)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
-| SessionStart | auto-update, session-snapshot, health-aggregator, compound-context-loader, read-docs-reminder | Init, health summary, memory injection, toolkit update |
+| SessionStart | auto-update, session-snapshot, health-aggregator, compound-context-loader, read-docs-reminder, distill-trigger | Init, health summary, memory injection, toolkit update, transcript distillation |
 | UserPromptSubmit | skill-state-initializer, read-docs-trigger | State files and doc suggestions |
 | PreToolUse (*) | pretooluse-auto-approve | Auto-approve during autonomous mode |
 | PreToolUse (Edit/Write) | plan-mode-enforcer | Block until plan done + /go Read-gate |
@@ -124,11 +124,13 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
 | Stop | stop-validator | Validate checkpoint, auto-capture memory event + health snapshot |
+| SessionEnd | session-end-archiver | Archive raw transcript on any exit (crash safety) |
+| PreCompact | precompact-capture | Archive transcript + inject summary before compaction |
 | PermissionRequest | permissionrequest-auto-approve | Auto-approve during autonomous mode |
 
 ---
 
-## Memory System (v3)
+## Memory System (v4)
 
 **Append-only event store** for cross-session learning. Events stored in `~/.claude/memory/{project-hash}/events/`.
 
@@ -137,34 +139,15 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 1. **Auto-capture** (primary path): `stop-validator` hook archives checkpoint as LESSON-first memory event on every successful stop. Checkpoint requires `key_insight` (>30 chars), `search_terms` (2-7 concept keywords), `category` (enum), and optional `memory_that_helped` (event IDs from `<m>` tags).
 2. **Manual capture** (deep captures): `/compound` skill for detailed LESSON/PROBLEM/CAUSE/FIX documentation
 3. **Auto-injection**: `compound-context-loader` hook injects top 10 relevant events as structured XML at SessionStart
-4. **Hybrid selection**: Haiku-based semantic selection with deterministic fallback
-   - **Haiku path**: Uses git context (branch, commits, changed files) to select semantically relevant memories
-   - **Caching**: 1-hour TTL cache keyed by (event_ids + changed_files), stored in `haiku-cache.json`
-   - **Fallback**: If Haiku fails or no API key, falls back to 4-signal deterministic scoring
-   - **Enabling Haiku**: Requires `ANTHROPIC_API_KEY` in environment (see below)
-5. **Scoring (fallback)**: 4-signal ranking — entity overlap (35%) + recency (30%) + content quality (20%) + source (15%)
-6. **Entity matching**: File-path entities (basename, stem, dir) + concept entities (from `search_terms`) with substring matching
-7. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
-8. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
-
-### Enabling Haiku Selection
-
-By default, memory selection uses deterministic 4-signal scoring. To enable Haiku-based semantic selection:
-
-```bash
-# Add to ~/.zshrc or ~/.bashrc
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-Then restart Claude Code. Verify it's working:
-```bash
-cat .claude/health-injection-metrics.json | jq '{haiku_used, haiku_cache_hit}'
-# Expected: {"haiku_used": true, "haiku_cache_hit": false}
-```
-
-**Why is this optional?** Claude Code uses OAuth for authentication, not raw API keys. Hooks run as subprocesses and don't inherit OAuth credentials, so they need `ANTHROPIC_API_KEY` explicitly set.
-
-**Cost**: ~$0.0008 per session start (2K tokens input, 50 tokens output). With 1-hour caching, typical usage is ~$0.01/day
+4. **Deterministic selection**: 4-signal scoring — entity overlap (35%) + recency (30%) + content quality (20%) + source (15%)
+5. **Three-layer crash safety**:
+   - `precompact-capture` (PreCompact): archives transcript before context compaction + injects summary into post-compaction context
+   - `stop-validator` (Stop): structured LESSON capture on clean exit
+   - `session-end-archiver` (SessionEnd): archives raw transcript on ANY exit (Ctrl+C, crash, context exhaustion)
+6. **Sonnet distillation daemon**: `distill-trigger` (SessionStart) detects unprocessed raw transcripts from previous sessions, suggests background `Task(model="sonnet")` to extract structured LESSON memories via `distill-create-event.py`
+7. **Entity matching**: File-path entities (basename, stem, dir) + concept entities (from `search_terms`) with substring matching
+8. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
+9. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
 
 ### Feedback Loop & Auto-Tuning
 

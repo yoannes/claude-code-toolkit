@@ -27,12 +27,17 @@
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/compound-context-loader.py\"",
-            "timeout": 120
+            "timeout": 15
           },
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/read-docs-reminder.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/distill-trigger.py\"",
+            "timeout": 10
           }
         ]
       },
@@ -57,12 +62,17 @@
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/compound-context-loader.py\"",
-            "timeout": 120
+            "timeout": 15
           },
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/read-docs-reminder.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/distill-trigger.py\"",
+            "timeout": 10
           }
         ]
       }
@@ -74,6 +84,28 @@
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/stop-validator.py\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/session-end-archiver.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/precompact-capture.py\"",
+            "timeout": 15
           }
         ]
       }
