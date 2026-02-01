@@ -141,10 +141,30 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
    - **Haiku path**: Uses git context (branch, commits, changed files) to select semantically relevant memories
    - **Caching**: 1-hour TTL cache keyed by (event_ids + changed_files), stored in `haiku-cache.json`
    - **Fallback**: If Haiku fails or no API key, falls back to 4-signal deterministic scoring
+   - **Enabling Haiku**: Requires `ANTHROPIC_API_KEY` in environment (see below)
 5. **Scoring (fallback)**: 4-signal ranking — entity overlap (35%) + recency (30%) + content quality (20%) + source (15%)
 6. **Entity matching**: File-path entities (basename, stem, dir) + concept entities (from `search_terms`) with substring matching
 7. **Dedup**: Prefix-hash guard (8-event lookback, 60-min window) prevents duplicates
 8. **Bootstrap filter**: Commit-message-level events automatically excluded from injection
+
+### Enabling Haiku Selection
+
+By default, memory selection uses deterministic 4-signal scoring. To enable Haiku-based semantic selection:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Then restart Claude Code. Verify it's working:
+```bash
+cat .claude/health-injection-metrics.json | jq '{haiku_used, haiku_cache_hit}'
+# Expected: {"haiku_used": true, "haiku_cache_hit": false}
+```
+
+**Why is this optional?** Claude Code uses OAuth for authentication, not raw API keys. Hooks run as subprocesses and don't inherit OAuth credentials, so they need `ANTHROPIC_API_KEY` explicitly set.
+
+**Cost**: ~$0.0008 per session start (2K tokens input, 50 tokens output). With 1-hour caching, typical usage is ~$0.01/day
 
 ### Feedback Loop & Auto-Tuning
 
