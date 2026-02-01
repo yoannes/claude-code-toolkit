@@ -38,7 +38,7 @@ from _common import (
     is_pid_alive,
     log_debug,
 )
-from _state import cleanup_expired_state
+from _state import cleanup_expired_state, cleanup_checkpoint_only
 
 
 def _check_and_claim_session_ownership(cwd: str, session_id: str) -> None:
@@ -141,7 +141,18 @@ def main():
     # 2. Session guard - check and claim ownership
     _check_and_claim_session_ownership(cwd, session_id)
 
-    # 3. Clean up expired/foreign-session autonomous state files
+    # 3. Clean up stale checkpoint from previous session
+    # Checkpoint files now persist through the stop flow (not deleted by
+    # stop-validator) to avoid a race condition. Clean them up here instead.
+    checkpoint_deleted = cleanup_checkpoint_only(cwd)
+    if checkpoint_deleted:
+        log_debug(
+            "Cleaned up stale checkpoint from previous session",
+            hook_name="session-snapshot",
+            parsed_data={"deleted": checkpoint_deleted},
+        )
+
+    # 4. Clean up expired/foreign-session autonomous state files
     deleted = cleanup_expired_state(cwd, session_id)
     if deleted:
         log_debug(
@@ -163,7 +174,7 @@ def main():
     except Exception:
         cleanup_metrics = {"ts": "", "expired_state_cleaned": 0}
 
-    # 4. Garbage collect stale worktrees (from crashed coordinators)
+    # 5. Garbage collect stale worktrees (from crashed coordinators)
     try:
         from worktree_manager import gc_worktrees
 
@@ -178,7 +189,7 @@ def main():
     except ImportError:
         pass  # worktree-manager not available
 
-    # 5. Clean up stale async-tasks files (older than 7 days)
+    # 6. Clean up stale async-tasks files (older than 7 days)
     import time
 
     async_tasks_dir = claude_dir / "async-tasks"
@@ -200,17 +211,17 @@ def main():
             )
             print(f"[session-snapshot] Cleaned up {len(cleaned_tasks)} stale async-task(s).")
 
-    # 6. Clean up old session transcript files (prevents ~/.claude bloat)
+    # 7. Clean up old session transcript files (prevents ~/.claude bloat)
     # Keep 20 most recent per project, delete files older than 30 days
     _cleanup_old_sessions()
 
-    # 7. Clean up old debug files (older than 7 days)
+    # 8. Clean up old debug files (older than 7 days)
     _cleanup_debug_files()
 
-    # 8. Clean up empty session-env directories
+    # 9. Clean up empty session-env directories
     _cleanup_session_env()
 
-    # 9. Write health cleanup metrics sidecar
+    # 10. Write health cleanup metrics sidecar
     try:
         metrics_path = claude_dir / "health-cleanup-metrics.json"
         metrics_path.write_text(json.dumps(cleanup_metrics, indent=2))

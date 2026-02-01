@@ -40,7 +40,6 @@ from _common import (
 )
 from _checkpoint import load_checkpoint
 from _state import (
-    cleanup_checkpoint_only,
     reset_state_for_next_task,
     is_autonomous_mode_active,
 )
@@ -226,14 +225,14 @@ def main():
         # Auto-capture: archive health snapshot
         _capture_session_health(cwd, checkpoint)
 
-        # Sticky session: clean only checkpoint, keep mode state for next task
-        deleted = cleanup_checkpoint_only(cwd)
-        if deleted:
-            log_debug(
-                "Cleaned up checkpoint (sticky session: mode state preserved)",
-                hook_name="stop-validator",
-                parsed_data={"deleted": deleted},
-            )
+        # NOTE: Checkpoint file is intentionally NOT deleted here.
+        # Deletion used to cause a race condition: the stop hook would delete
+        # the checkpoint, but the stop wouldn't always fully complete (e.g.,
+        # Claude Code runtime re-prompts or a second stop fires). The next
+        # stop attempt would find no checkpoint and block with
+        # "COMPLETION CHECKPOINT REQUIRED". The checkpoint is now cleaned up
+        # at SessionStart (session-snapshot.py) instead.
+
         # Reset per-task fields for the next task iteration
         if reset_state_for_next_task(cwd):
             log_debug(
@@ -274,14 +273,9 @@ def main():
     # Auto-capture: archive health snapshot
     _capture_session_health(cwd, checkpoint)
 
-    # Sticky session: clean only checkpoint, keep mode state for next task
-    deleted = cleanup_checkpoint_only(cwd)
-    if deleted:
-        log_debug(
-            "Cleaned up checkpoint (sticky session: mode state preserved)",
-            hook_name="stop-validator",
-            parsed_data={"deleted": deleted},
-        )
+    # NOTE: Checkpoint file is intentionally NOT deleted here (same as first stop).
+    # See comment above for rationale.
+
     # Reset per-task fields for the next task iteration
     if reset_state_for_next_task(cwd):
         log_debug(
