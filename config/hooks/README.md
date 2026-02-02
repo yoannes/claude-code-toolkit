@@ -6,36 +6,58 @@ This directory contains Python hook scripts that extend Claude Code's lifecycle 
 
 | Script | Event | Purpose |
 |--------|-------|---------|
+| `auto-update.py` | SessionStart | Auto-updates toolkit from GitHub on session start |
 | `session-snapshot.py` | SessionStart | Captures git diff hash at session start for change tracking |
+| `compound-context-loader.py` | SessionStart | Injects top-5 relevant memory events at session start |
 | `read-docs-reminder.py` | SessionStart | Reminds to read project documentation on new sessions |
-| `stop-validator.py` | Stop | Validates completion checkpoint before allowing session end |
-| `checkpoint-invalidator.py` | PostToolUse (Edit/Write) | Resets stale checkpoint fields when code changes |
-| `plan-execution-reminder.py` | PostToolUse (ExitPlanMode) | Injects autonomous execution context after plan approval |
-| `plan-mode-tracker.py` | PostToolUse (ExitPlanMode) | Marks plan_mode_completed=true in state file |
-| `plan-mode-enforcer.py` | PreToolUse (Edit/Write) | Blocks Edit/Write on first godo/appfix iteration until plan mode completed |
-| `appfix-auto-approve.py` | PermissionRequest | Auto-approves ALL tools during godo/appfix mode |
+| `skill-state-initializer.py` | UserPromptSubmit | Creates state files for /melt and /appfix to enable auto-approval |
 | `read-docs-trigger.py` | UserPromptSubmit | Suggests reading docs when "read the docs" appears in prompt |
-| `skill-state-initializer.py` | UserPromptSubmit | Creates state files for /appfix and /build to enable auto-approval |
+| `pretooluse-auto-approve.py` | PreToolUse (*) | Auto-approves ALL tools during autonomous mode |
+| `plan-mode-enforcer.py` | PreToolUse (Edit/Write) | Blocks Edit/Write until plan mode completed + /go Read-gate |
+| `deploy-enforcer.py` | PreToolUse (Bash) | Blocks subagent deploys and production deploys |
+| `azure-command-guard.sh` | PreToolUse (Bash) | Blocks dangerous Azure CLI commands |
+| `exa-search-enforcer.py` | PreToolUse (WebSearch) | Blocks WebSearch, redirects to Exa MCP |
+| `lite-heavy-enforcer.py` | PreToolUse (ExitPlanMode) | Blocks ExitPlanMode until Lite Heavy agents launched |
+| `checkpoint-invalidator.py` | PostToolUse (Edit/Write) | Resets stale checkpoint flags when code changes |
+| `lite-heavy-tracker.py` | PostToolUse (Read/Task) | Tracks Lite Heavy agent progress |
+| `go-context-tracker.py` | PostToolUse (Read/Grep/Glob) | Tracks context gathering for /go Read-gate |
+| `memory-recall.py` | PostToolUse (Read/Grep/Glob) | Mid-session memory retrieval (8 recalls/session) |
 | `bash-version-tracker.py` | PostToolUse (Bash) | Tracks version after git commits, updates checkpoint |
-| `checkpoint-write-validator.py` | PostToolUse (Write) | Validates checkpoint file integrity on writes |
+| `doc-updater-async.py` | PostToolUse (Bash) | Suggests async doc updates after git commits |
+| `plan-mode-tracker.py` | PostToolUse (ExitPlanMode) | Marks plan_mode_completed=true in state file |
+| `plan-execution-reminder.py` | PostToolUse (ExitPlanMode) | Injects autonomous execution context after plan approval |
+| `skill-continuation-reminder.py` | PostToolUse (Skill) | Continues autonomous loop after skill delegation |
+| `stop-validator.py` | Stop | Validates completion checkpoint before allowing session end |
+| `precompact-capture.py` | PreCompact | Injects session summary before context compaction |
+| `permissionrequest-auto-approve.py` | PermissionRequest | Fallback auto-approve during autonomous mode |
+
+## Internal Modules (Not Lifecycle Hooks)
+
+| Module | Purpose |
+|--------|---------|
+| `_common.py` | Shared utility functions (state detection, version tracking, logging) |
+| `_memory.py` | Memory primitives (event store, entity matching, crash-safe writes) |
+| `_state.py` | State file management for autonomous modes |
+| `_checkpoint.py` | Checkpoint operations (load, save, invalidation) |
+| `_sv_validators.py` | Validation logic for stop-validator (sub-validators) |
+| `_sv_templates.py` | Blocking message templates for stop-validator |
 
 ## Utility Scripts (Not Lifecycle Hooks)
 
 | Script | Purpose |
 |--------|---------|
-| `_common.py` | Shared utility functions used by other hooks |
-| `_sv_validators.py` | Validation logic for stop-validator (sub-validators) |
-| `_sv_templates.py` | Blocking message templates for stop-validator |
 | `surf-verify.py` | Runs Surf CLI for browser verification, generates web-smoke artifacts |
 | `worktree-manager.py` | Creates/manages git worktrees for parallel agent isolation |
+| `cleanup.py` | Reclaim disk space from Claude Code session data |
+| `deploy-verify.py` | Deployment verification |
 
 ### _common.py Functions
 
 ```python
 # State detection
-is_build_active(cwd)             # Check if .claude/build-state.json exists
+is_melt_active(cwd)             # Check if .claude/melt-state.json exists
 is_appfix_active(cwd)           # Check if .claude/appfix-state.json exists
-is_autonomous_mode_active(cwd)  # Check if either godo or appfix is active
+is_autonomous_mode_active(cwd)  # Check if either melt or appfix is active
 
 # Version tracking (excludes infrastructure paths from dirty check)
 get_code_version(cwd)           # Returns "abc1234" or "abc1234-dirty" (stable during edits)
@@ -66,30 +88,10 @@ infrastructure_patterns = [
 
 Changes to these paths are treated as "infrastructure changes" and don't require deployment, linting, or browser testing.
 
-## Unused Hooks (Not in settings.json)
-
-| Script | Status | Notes |
-|--------|--------|-------|
-| `appfix-bash-auto-approve.py` | Deprecated | Superseded by unified `appfix-auto-approve.py` |
-| `appfix-exitplan-auto-approve.py` | Deprecated | Superseded by unified `appfix-auto-approve.py` |
-| `skill-reminder.py` | Optional | Disabled by design; noisy for users who don't use skills frequently |
-
-### Enabling skill-reminder.py
-
-To enable skill suggestions, add to `settings.json` under `UserPromptSubmit`:
-
-```json
-{
-  "type": "command",
-  "command": "python3 ~/.claude/config/hooks/skill-reminder.py",
-  "timeout": 5
-}
-```
-
 ## Security Model
 
 Auto-approval hooks only activate when a state file exists:
-- `.claude/build-state.json` - Created by `/build` skill
+- `.claude/melt-state.json` - Created by `/melt` skill
 - `.claude/appfix-state.json` - Created by `/appfix` skill
 
 Normal sessions without these files require user approval for all tool operations.
@@ -98,32 +100,60 @@ Normal sessions without these files require user approval for all tool operation
 
 ```
 SessionStart
+    └─► auto-update.py (updates toolkit from GitHub)
     └─► session-snapshot.py (captures git hash)
+    └─► compound-context-loader.py (injects memory events)
     └─► read-docs-reminder.py (reminds to read docs)
 
 UserPromptSubmit
+    └─► skill-state-initializer.py (creates melt/appfix state files)
     └─► read-docs-trigger.py (checks for "read the docs")
-    └─► skill-state-initializer.py (creates godo/appfix state files)
+
+PreToolUse (*)
+    └─► pretooluse-auto-approve.py (auto-approve if autonomous mode active)
 
 PreToolUse (Edit/Write)
     └─► plan-mode-enforcer.py (blocks until plan mode completed, iteration 1 only)
 
+PreToolUse (Bash)
+    └─► deploy-enforcer.py (blocks subagent/production deploys)
+    └─► azure-command-guard.sh (blocks dangerous az commands)
+
+PreToolUse (WebSearch)
+    └─► exa-search-enforcer.py (blocks WebSearch, redirects to Exa MCP)
+
+PreToolUse (ExitPlanMode)
+    └─► lite-heavy-enforcer.py (blocks until Lite Heavy agents launched)
+
 PostToolUse (Edit/Write)
     └─► checkpoint-invalidator.py (resets stale checkpoint)
-    └─► checkpoint-write-validator.py (validates checkpoint integrity)
+
+PostToolUse (Read/Grep/Glob)
+    └─► go-context-tracker.py (tracks /go Read-gate)
+    └─► memory-recall.py (mid-session memory retrieval)
+
+PostToolUse (Read/Task)
+    └─► lite-heavy-tracker.py (tracks Lite Heavy progress)
 
 PostToolUse (Bash)
     └─► bash-version-tracker.py (tracks version after git commits)
+    └─► doc-updater-async.py (suggests doc updates)
 
 PostToolUse (ExitPlanMode)
     └─► plan-execution-reminder.py (injects context)
     └─► plan-mode-tracker.py (marks plan_mode_completed=true)
 
-PermissionRequest (any tool)
-    └─► appfix-auto-approve.py (auto-approve if godo/appfix active)
+PostToolUse (Skill)
+    └─► skill-continuation-reminder.py (continues autonomous loop)
 
 Stop
-    └─► stop-validator.py (validates checkpoint)
+    └─► stop-validator.py (validates checkpoint + auto-captures memory event)
+
+PreCompact
+    └─► precompact-capture.py (injects session summary)
+
+PermissionRequest (any tool)
+    └─► permissionrequest-auto-approve.py (fallback auto-approve if autonomous)
 ```
 
 ## Testing
@@ -144,10 +174,10 @@ cd prompts && bash scripts/test-e2e-tmux.sh --observe
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `tests/test_plan_mode_hooks.py` | 24 | Enforcer, tracker, initializer, full chain |
+| `tests/test_sv_validators.py` | — | Stop-validator sub-validators |
+| `tests/test_memory_system.py` | — | Memory system primitives |
 | `scripts/test-e2e-headless.sh` | 5 | Real Claude sessions via `claude -p` |
 | `scripts/test-e2e-tmux.sh` | 3 | Interactive sessions with tmux |
-
-The pytest tests run hooks as subprocesses with simulated JSON stdin and isolated temp directories. The E2E tests verify hooks work end-to-end in real Claude Code sessions.
 
 ## Related Documentation
 

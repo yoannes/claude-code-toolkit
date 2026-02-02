@@ -997,12 +997,12 @@ Stop hook error: JSON validation failed
 
 ## Autonomous Execution Hook System
 
-The `/build` and `/appfix` skills use a coordinated set of hooks to enforce fully autonomous execution. These hooks activate when autonomous mode is detected via:
+The `/melt` and `/appfix` skills use a coordinated set of hooks to enforce fully autonomous execution. These hooks activate when autonomous mode is detected via:
 
-1. **State file existence** (primary): `.claude/build-state.json` or `.claude/appfix-state.json` exists in the project
+1. **State file existence** (primary): `.claude/melt-state.json` or `.claude/appfix-state.json` exists in the project
 2. **Environment variable** (legacy): `GODO_ACTIVE=true` or `APPFIX_ACTIVE=true`
 
-The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state files automatically when `/build` or `/appfix` is invoked. State files include a `started_at` timestamp and expire after a configurable TTL (checked by `is_state_expired()` in `_common.py`).
+The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state files automatically when `/melt` or `/appfix` is invoked. State files include a `started_at` timestamp and expire after a configurable TTL (checked by `is_state_expired()` in `_common.py`).
 
 ### Architecture
 
@@ -1013,7 +1013,7 @@ The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state fil
 │                                                                             │
 │  UserPromptSubmit                                                           │
 │  └─→ skill-state-initializer.py                                             │
-│      └─→ Creates .claude/build-state.json or .claude/appfix-state.json      │
+│      └─→ Creates .claude/melt-state.json or .claude/appfix-state.json       │
 │      └─→ Sets started_at timestamp for TTL expiry                          │
 │                                                                             │
 │  PreToolUse(Edit/Write)                                                     │
@@ -1032,7 +1032,6 @@ The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state fil
 │                                                                             │
 │  PostToolUse(Edit/Write)                                                    │
 │  └─→ checkpoint-invalidator.py → resets stale checkpoint flags             │
-│  └─→ checkpoint-write-validator.py → warns on claims without evidence      │
 │                                                                             │
 │  PostToolUse(Bash)                                                          │
 │  └─→ bash-version-tracker.py → invalidates fields on version change        │
@@ -1041,7 +1040,7 @@ The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state fil
 │  └─→ skill-continuation-reminder.py → continues loop after skill           │
 │                                                                             │
 │  PermissionRequest(*)                                                       │
-│  └─→ appfix-auto-approve.py                                                │
+│  └─→ permissionrequest-auto-approve.py                                     │
 │      └─→ If autonomous mode active: Auto-approve ALL tools                 │
 │      └─→ If not active: Silent pass-through (normal approval)              │
 │                                                                             │
@@ -1104,7 +1103,7 @@ The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state fil
 
 ### PermissionRequest Hook: Auto-Approve Fallback
 
-**File**: `~/.claude/hooks/appfix-auto-approve.py`
+**File**: `~/.claude/hooks/permissionrequest-auto-approve.py`
 
 **Purpose**: Fallback auto-approval for any permission dialogs that still appear (defense in depth).
 
@@ -1117,7 +1116,7 @@ The `skill-state-initializer.py` hook (UserPromptSubmit) creates these state fil
     "hooks": [
       {
         "type": "command",
-        "command": "python3 ~/.claude/hooks/appfix-auto-approve.py",
+        "command": "python3 ~/.claude/hooks/permissionrequest-auto-approve.py",
         "timeout": 5
       }
     ]
@@ -1241,11 +1240,9 @@ Permission patterns recognized: `prod`, `production`, `deploy to prod`, `push to
 
 **bash-version-tracker.py** (PostToolUse/Bash): Detects version-changing commands (git commit, az CLI, gh workflow run) and invalidates stale checkpoint fields. Prevents the scenario where code changes go undetected.
 
-**doc-updater-async.py** (PostToolUse/Bash): Detects git commits during appfix/build sessions and creates a task file for async documentation updates. Suggests spawning a background Sonnet agent to update relevant docs based on the commit diff. Uses /heavy for multi-perspective analysis of architectural changes.
+**doc-updater-async.py** (PostToolUse/Bash): Detects git commits during appfix/melt sessions and creates a task file for async documentation updates. Suggests spawning a background Sonnet agent to update relevant docs based on the commit diff. Uses /heavy for multi-perspective analysis of architectural changes.
 
 **checkpoint-invalidator.py** (PostToolUse/Edit/Write): Proactively resets stale checkpoint flags when code is edited, before the stop hook checks. Prevents false checkpoint claims.
-
-**checkpoint-write-validator.py** (PostToolUse/Write): Warns (does not block) when writing checkpoint claims without evidence. Catches issues early before the stop hook rejects them.
 
 **plan-execution-reminder.py** (PostToolUse/ExitPlanMode): Injects aggressive autonomous execution context after plan mode completes — the fix-verify loop instructions.
 
@@ -1259,12 +1256,12 @@ Permission patterns recognized: `prod`, `production`, `deploy to prod`, `push to
 # Test auto-approve with state file
 mkdir -p /tmp/test-project/.claude
 echo '{"iteration": 1, "started_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > /tmp/test-project/.claude/appfix-state.json
-echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-auto-approve.py
+echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/permissionrequest-auto-approve.py
 # Expected: JSON with decision.behavior: "allow"
 
 # Test auto-approve without state (should pass through)
 rm -rf /tmp/test-project/.claude
-echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/appfix-auto-approve.py
+echo '{"tool_name":"Bash","cwd":"/tmp/test-project"}' | python3 ~/.claude/hooks/permissionrequest-auto-approve.py
 # Expected: No output (pass through)
 
 # Test deploy-enforcer blocking subagent deploy
@@ -1364,4 +1361,4 @@ For more details, see the official Claude Code documentation on Tasks.
 - [Skills Reference](./skills.md) - Domain-specific knowledge injection
 - [Config Files](../../config/) - Actual hook/skill/command files for installation
 - Project CLAUDE.md - Per-project coding standards
-- Project .claude/MEMORIES.md - Per-project session memories
+- Memory System - Cross-session learning via `~/.claude/memory/{project-hash}/events/`

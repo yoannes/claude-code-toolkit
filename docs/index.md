@@ -47,7 +47,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 
 ---
 
-## All Slash Commands (17 commands + 5 core skills)
+## All Slash Commands (18 commands + 5 core skills)
 
 | Command | Purpose |
 |---------|---------|
@@ -64,6 +64,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `/deslop` | AI slop detection (detection only - use /burndown to fix) |
 | `/docupdate` | Documentation gaps |
 | `/config-audit` | Environment variable analysis |
+| `/cleanup` | Reclaim disk space from session data |
 | `/webtest` | Browser testing |
 | `/mobiletest` | Maestro E2E tests |
 | `/mobileaudit` | Vision-based UI audit |
@@ -106,7 +107,7 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | `revonc-eas-deploy` | /eas, /revonc-deploy, "deploy to testflight", "build ios/android" |
 | `health` | /health, "system health", "how is memory doing", "check health" |
 
-## Registered Hooks (20 scripts)
+## Registered Hooks (24 scripts)
 
 | Event | Scripts | Purpose |
 |-------|---------|---------|
@@ -118,8 +119,8 @@ Consolidates `/deslop` + `/qa` into autonomous fix loop → 3 detection agents s
 | PreToolUse (WebSearch) | exa-search-enforcer | Block WebSearch, redirect to Exa MCP |
 | PreToolUse (ExitPlanMode) | lite-heavy-enforcer | Block until Lite Heavy done |
 | PostToolUse (Edit/Write) | checkpoint-invalidator | Reset stale flags |
-| PostToolUse (Read/Grep/Glob) | lite-heavy-tracker, go-context-tracker | Track Lite Heavy + /go Read-gate |
-| PostToolUse (Task) | lite-heavy-tracker | Track Lite Heavy progress |
+| PostToolUse (Read/Grep/Glob) | go-context-tracker, memory-recall | /go Read-gate + mid-session memory recall |
+| PostToolUse (Read/Task) | lite-heavy-tracker | Track Lite Heavy progress |
 | PostToolUse (Bash) | bash-version-tracker, doc-updater-async | Track versions, suggest doc updates |
 | PostToolUse (ExitPlanMode) | plan-mode-tracker, plan-execution-reminder | Mark plan done, inject context |
 | PostToolUse (Skill) | skill-continuation-reminder | Continue loop after skill |
@@ -211,7 +212,7 @@ If the MCP server isn't configured, ToolSearch returns no results and the skill 
 | Skill | ToolSearch Call | Why |
 |-------|---------------|-----|
 | `/mobileappfix` | `ToolSearch(query: "maestro")` | Hard dependency on Maestro MCP for E2E tests |
-| `/build` (mobile path) | `ToolSearch(query: "maestro")` | Mobile verification requires Maestro MCP |
+| `/melt` (mobile path) | `ToolSearch(query: "maestro")` | Mobile verification requires Maestro MCP |
 | `/heavy` (search policy) | `ToolSearch(query: "exa")` | Preferred search tool, discovered on demand |
 
 Skills without MCP dependencies (`/go`, `/compound`, `/burndown`, `/qa`, `/deslop`) need no ToolSearch calls.
@@ -239,18 +240,27 @@ Skills without MCP dependencies (`/go`, `/compound`, `/burndown`, `/qa`, `/deslo
 | [Azure Command Guard](hooks/azure-command-guard.md) | Azure CLI security hook |
 | [Azure Guard Testing](hooks/azure-guard-testing.md) | Testing the Azure guard |
 
+## Research & Historical
+
+| Document | Description |
+|----------|-------------|
+| [Agentic AI 2026 Research](research/agentic-ai-2026-research-report.md) | Research report on agentic AI landscape |
+| [Compound + Supermemory Integration](research/compound-engineering-supermemory-integration.md) | Research: integrating Compound Engineering with Supermemory |
+| [Memory Analysis (historical)](analysis-persistent-memory-for-harnesses.md) | Pre-v5 memory integration analysis |
+| [Memory Architecture (historical)](memory-integration-analysis.md) | Hybrid push/pull memory architecture proposal |
+
 ## Directory Structure
 
 ```
-namshub/        # THIS IS THE SOURCE OF TRUTH
+claude-code-toolkit/   # THIS IS THE SOURCE OF TRUTH
 ├── config/
 │   ├── CLAUDE.md              # Global instructions (symlinked to ~/.claude/CLAUDE.md)
 │   ├── settings.json          # Hook definitions + ENABLE_TOOL_SEARCH=auto
-│   ├── commands/              # 11 skill definition files (+ 3 skill-commands)
-│   ├── hooks/                 # Python/bash hooks (20 registered)
-│   └── skills/                # 25 skills ← EDIT HERE
+│   ├── commands/              # 15 command files
+│   ├── hooks/                 # Python/bash hooks (24 registered)
+│   └── skills/                # 27 skills ← EDIT HERE
 ├── docs/                      # Documentation
-├── scripts/                   # install.sh, doctor.sh
+├── scripts/                   # install.sh, doctor.sh, skill-tester.sh, test-e2e-*.sh
 └── README.md
 
 ~/.claude/                     # SYMLINKED TO REPO + MEMORY

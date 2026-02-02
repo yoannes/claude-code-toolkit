@@ -62,7 +62,7 @@ Present findings as a structured Markdown report with these sections:
 - Score distribution of injected events
 
 #### Session State
-- Current mode (go/build/repair/none)
+- Current mode (go/melt/repair/none)
 - Code changes detected this session
 - Events injected at session start
 - Events captured at last stop

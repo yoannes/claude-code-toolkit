@@ -7,7 +7,7 @@ description: Fast autonomous execution with lightweight planning. Read-gated edi
 
 Execute tasks directly. No multi-agent planning, no EnterPlanMode ceremony.
 
-**DO NOT** use EnterPlanMode or launch planning agents. This is /go, not /build.
+**DO NOT** use EnterPlanMode or launch planning agents. This is /go, not /melt.
 
 ## How It Works
 
@@ -77,10 +77,10 @@ Before stopping, write `.claude/completion-checkpoint.json`:
 - `linters_pass` only required when `code_changes_made` is true
 - `code_changes_made` is your self-report, not git diff detection
 
-## When to Use /go vs /build
+## When to Use /go vs /melt
 
-| /go | /build |
-|-----|--------|
+| /go | /melt |
+|-----|-------|
 | Clear task, bounded scope | Ambiguous problem, needs exploration |
 | Any complexity if you're confident | Multi-stakeholder architectural decisions |
 | Speed matters | Thoroughness matters |

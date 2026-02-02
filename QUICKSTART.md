@@ -10,8 +10,8 @@
 ## Install
 
 ```bash
-git clone https://github.com/Motium-AI/namshub.git
-cd namshub
+git clone https://github.com/Motium-AI/claude-code-toolkit.git
+cd claude-code-toolkit
 ./scripts/install.sh
 ```
 
@@ -63,7 +63,7 @@ ls -la ~/.claude/  # Check symlinks
 
 ### Auto-approval not working
 ```bash
-cat .claude/appfix-state.json  # Should exist during /build or /appfix
+cat .claude/appfix-state.json  # Should exist during /melt or /appfix
 ```
 
 ### Debug log

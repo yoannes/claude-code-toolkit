@@ -7,8 +7,8 @@ Natural language in, verified deployed code out. The stop hook blocks completion
 ## Invoke It (60 seconds)
 
 ```bash
-git clone https://github.com/Motium-AI/namshub.git
-cd namshub && ./scripts/install.sh
+git clone https://github.com/Motium-AI/claude-code-toolkit.git
+cd claude-code-toolkit && ./scripts/install.sh
 # Restart Claude Code, then:
 ```
 
@@ -26,7 +26,9 @@ Watch what happens:
 
 If step 5 fails, it loops back. You get working code, not promises.
 
-## Four Skills
+## Five Core Skills
+
+**`/go`** — Fast autonomous execution. No multi-agent planning, Read-gated editing. 8-10x faster than /melt.
 
 **`/melt`** — Autonomous execution with 4-agent Lite Heavy planning. Give it a task, get verified deployed code. (Aliases: `/build`, `/forge`)
 

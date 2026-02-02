@@ -245,19 +245,19 @@ webapp-testing/
 - Design tokens
 - Responsive behavior specs
 
-### 7. build
+### 7. melt
 
-**Location**: `~/.claude/skills/build/`
+**Location**: `~/.claude/skills/melt/`
 
-**Triggers**: /build, "go do", "just do it", "execute this"
+**Triggers**: /melt, /build (legacy), /forge (legacy), "go do", "just do it", "execute this"
 
 **Coverage**:
 - Task-agnostic autonomous execution with completion checkpoint
-- Mandatory plan mode before implementation
+- Lite Heavy planning (4 parallel Opus agents) before implementation
 - Full fix-verify loop: implement → lint → commit → deploy → browser verify
 - Cannot stop until checkpoint passes
 
-**Guide**: [Build Guide](../skills/build-guide.md)
+**Guide**: [Melt Guide](../skills/melt-guide.md)
 
 ### 8. appfix
 
@@ -280,8 +280,8 @@ webapp-testing/
 **Triggers**: /heavy, "heavy analysis", "multiple perspectives", "debate this"
 
 **Coverage**:
-- Multi-perspective analysis with 6 parallel Opus agents
-- 3 dynamic + 3 fixed perspectives (Critical Reviewer, Architecture Advisor, Shipping Engineer)
+- Multi-perspective analysis with 5 parallel Opus agents
+- 2 required (First Principles + AGI-Pilled) + 1 fixed (Critical Reviewer) + 2 dynamic
 - Self-educating agents via codebase + web + vendor docs
 - Structured disagreements and adversarial dialogue
 
@@ -394,6 +394,98 @@ webapp-testing/
 audiobook/
 └── SKILL.md                    # Complete workflow + voice guide + stop-slop reference
 ```
+
+### 19. go
+
+**Location**: `~/.claude/skills/go/`
+
+**Triggers**: /go, "just go", "go fast", "quick fix", "quick build"
+
+**Coverage**:
+- Fast autonomous execution without multi-agent planning
+- Read-gated editing (must read before editing)
+- Lightweight 3+1 checkpoint
+
+### 20. repair
+
+**Location**: `~/.claude/skills/repair/`
+
+**Triggers**: /repair, "fix the app", "debug", "repair"
+
+**Coverage**:
+- Unified debugging router (auto-detects web vs mobile)
+- Routes to /appfix (web) or /mobileappfix (mobile)
+
+### 21. burndown
+
+**Location**: `~/.claude/skills/burndown/`
+
+**Triggers**: /burndown, "burn down debt", "clean up codebase"
+
+**Coverage**:
+- Autonomous tech debt elimination (combines /deslop + /qa)
+- 3 detection agents scan for slop and architecture issues
+- Iterative fix loop until clean
+
+### 22. compound
+
+**Location**: `~/.claude/skills/compound/`
+
+**Triggers**: /compound, "document this solution", "capture this learning"
+
+**Coverage**:
+- Manual deep memory capture (LESSON/PROBLEM/CAUSE/FIX)
+- Cross-session learning via append-only event store
+
+### 23. episode
+
+**Location**: `~/.claude/skills/episode/`
+
+**Triggers**: /episode, "generate an episode", "create educational video"
+
+**Coverage**:
+- Educational video episode generation with Minecraft-style graphics
+- Orchestrates fal.ai, ElevenLabs TTS, and FFmpeg
+
+### 24. essay
+
+**Location**: `~/.claude/skills/essay/`
+
+**Triggers**: /essay, "write an essay", "essay about"
+
+**Coverage**:
+- Long-form essay writing with 5-agent heavy analysis
+- Anti-slop enforcement and self-scoring rubric
+
+### 25. harness-test
+
+**Location**: `~/.claude/skills/harness-test/`
+
+**Triggers**: /harness-test, "test harness changes"
+
+**Coverage**:
+- Test hook/skill changes in isolated sandbox
+- Auto-triggers in /melt when modifying toolkit
+
+### 26. health
+
+**Location**: `~/.claude/skills/health/`
+
+**Triggers**: /health, "system health", "how is memory doing"
+
+**Coverage**:
+- Toolkit health metrics and memory state diagnostics
+- Injection effectiveness and session state
+
+### 27. improve
+
+**Location**: `~/.claude/skills/improve/`
+
+**Triggers**: /improve, "improve design", "improve UX"
+
+**Coverage**:
+- Universal recursive improvement (design, UX, performance, a11y)
+- Observe-grade-fix loop targeting 9/10
 
 ## Creating Custom Skills
 

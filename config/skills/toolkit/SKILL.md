@@ -24,13 +24,13 @@ Namshub extends Claude Code with:
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| **Commands** | Slash-invoked workflows (`/appfix`, `/build`, `/qa`) | `~/.claude/commands/` |
+| **Commands** | Slash-invoked workflows (`/appfix`, `/melt`, `/qa`) | `~/.claude/commands/` |
 | **Skills** | Automatic domain expertise injection | `~/.claude/skills/` |
 | **Hooks** | Lifecycle event handlers (auto-approval, stop validation) | `~/.claude/hooks/` |
 
 ### Key Capabilities
 
-- **Autonomous execution** (`/build`, `/appfix`) - Complete tasks without asking for confirmation
+- **Autonomous execution** (`/melt`, `/appfix`) - Complete tasks without asking for confirmation
 - **Completion checkpoint** - Stop hook validates that work is actually done
 - **Auto-approval** - Tools auto-approved during autonomous workflows
 - **Auto-update** - Toolkit updates itself on session start
@@ -55,8 +55,8 @@ The toolkit uses **symlinks** to connect `~/.claude/` to the toolkit repository:
 ### Installation Command
 
 ```bash
-git clone https://github.com/Motium-AI/namshub.git ~/namshub
-cd ~/namshub && ./scripts/install.sh
+git clone https://github.com/Motium-AI/claude-code-toolkit.git ~/claude-code-toolkit
+cd ~/claude-code-toolkit && ./scripts/install.sh
 ```
 
 **After installation, restart Claude Code** - hooks are captured at session startup.
@@ -108,7 +108,7 @@ export CLAUDE_TOOLKIT_AUTO_UPDATE=false
 ### Check for Updates
 
 ```bash
-cd ~/namshub  # or wherever you cloned it
+cd ~/claude-code-toolkit  # or wherever you cloned it
 git fetch origin main
 git log HEAD..origin/main --oneline
 ```
@@ -116,7 +116,7 @@ git log HEAD..origin/main --oneline
 ### Apply Updates
 
 ```bash
-cd ~/namshub
+cd ~/claude-code-toolkit
 git pull
 ```
 
@@ -125,7 +125,7 @@ git pull
 ### Check Current Version
 
 ```bash
-cd ~/namshub
+cd ~/claude-code-toolkit
 git log -1 --format="%h %s"
 ```
 
@@ -141,7 +141,7 @@ ls -la ~/.claude/commands
 ls -la ~/.claude/skills
 
 # Run verification
-~/namshub/scripts/install.sh --verify
+~/claude-code-toolkit/scripts/install.sh --verify
 ```
 
 ### Check Update State
@@ -159,13 +159,13 @@ Fields:
 ### Diagnose Issues
 
 ```bash
-~/namshub/scripts/doctor.sh
+~/claude-code-toolkit/scripts/doctor.sh
 ```
 
 ## Uninstall
 
 ```bash
-~/namshub/scripts/install.sh --uninstall
+~/claude-code-toolkit/scripts/install.sh --uninstall
 ```
 
 This removes symlinks but preserves `~/.claude/` directory (state files, plans, memories).
@@ -184,7 +184,7 @@ This removes symlinks but preserves `~/.claude/` directory (state files, plans, 
 
 **Fix**: Manual update:
 ```bash
-cd ~/namshub
+cd ~/claude-code-toolkit
 git fetch origin main
 git reset --hard origin/main  # Warning: discards local changes
 ```
@@ -195,7 +195,7 @@ git reset --hard origin/main  # Warning: discards local changes
 
 **Fix**:
 ```bash
-chmod +x ~/namshub/config/hooks/*.py
+chmod +x ~/claude-code-toolkit/config/hooks/*.py
 ```
 
 ### Symlinks Broken
@@ -204,7 +204,7 @@ chmod +x ~/namshub/config/hooks/*.py
 
 **Fix**: Re-run installer:
 ```bash
-cd ~/namshub && ./scripts/install.sh --force
+cd ~/claude-code-toolkit && ./scripts/install.sh --force
 ```
 
 ## CLAUDE.md Optimization
@@ -261,7 +261,7 @@ See `references/claude-md-optimizer.md` for the complete rubric with:
 
 | Command | Purpose |
 |---------|---------|
-| `/build` | Autonomous task execution |
+| `/melt` | Autonomous task execution |
 | `/appfix` | Autonomous debugging |
 | `/qa` | Codebase architecture audit |
 | `/webtest` | Browser automation testing |

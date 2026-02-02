@@ -23,13 +23,13 @@ This skill:
 ## Triggers
 
 - `/harness-test` - explicit invocation
-- Auto-triggered by `/build` when:
-  1. Working in namshub repository
+- Auto-triggered by `/melt` when:
+  1. Working in the toolkit repository
   2. Modified files include harness files (hooks, skills, settings)
 
-## Integration with /build
+## Integration with /melt
 
-When `/build` is active in the toolkit repository:
+When `/melt` is active in the toolkit repository:
 
 ```
 PHASE 1: EXECUTE (make code changes to hooks/skills)

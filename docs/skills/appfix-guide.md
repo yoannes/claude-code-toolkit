@@ -110,7 +110,7 @@ Appfix uses a 3-hook system to enforce autonomous operation:
 | Hook | Event | Purpose |
 |------|-------|---------|
 | `plan-execution-reminder.py` | PostToolUse (ExitPlanMode) | Injects autonomous execution context after plan approval |
-| `appfix-auto-approve.py` | PermissionRequest (*) | Auto-approves ALL tools when appfix state file exists |
+| `permissionrequest-auto-approve.py` | PermissionRequest (*) | Auto-approves ALL tools when appfix state file exists |
 | `stop-validator.py` | Stop | Validates completion checkpoint booleans before allowing stop |
 
 **How they work together:**
@@ -126,7 +126,7 @@ Appfix uses a 3-hook system to enforce autonomous operation:
        • "CONTINUE THE FIX-VERIFY LOOP NOW"
 
 3. Claude requests Edit/Write/Bash permissions
-   └─→ appfix-auto-approve.py detects state file → auto-approves
+   └─→ permissionrequest-auto-approve.py detects state file → auto-approves
 
 4. Claude tries to stop
    └─→ stop-validator.py checks checkpoint booleans

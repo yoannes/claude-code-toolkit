@@ -216,7 +216,16 @@ Claude stops → Hook blocks → Claude addresses → Claude stops → Hook allo
 
 **Purpose**: React to each user prompt. Multiple hooks can fire on the same event.
 
-This toolkit includes one UserPromptSubmit hook:
+This toolkit includes two UserPromptSubmit hooks:
+
+#### Skill State Initializer (skill-state-initializer.py)
+
+**Purpose**: Creates state files for `/melt` and `/appfix` to enable auto-approval.
+
+**Behavior**:
+1. Detects `/melt`, `/build`, `/appfix`, `/repair`, or `/go` in user prompt
+2. Creates corresponding state file (e.g., `.claude/melt-state.json`)
+3. Returns exit code 0 (non-blocking)
 
 #### Documentation Trigger Hook (read-docs-trigger.py)
 
