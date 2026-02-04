@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PostToolUse hook to track Lite Heavy progress for /build, /burndown, and /repair skills.
+PostToolUse hook to track Lite Heavy progress for /melt, /burndown, and /repair skills.
 
 Tracks agent launches and heavy/SKILL.md reads for enforcing Lite Heavy requirements.
 
@@ -18,6 +18,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import log_debug
 from _state import get_autonomous_state, _find_state_file_path
+
+
+STATE_TYPE_TO_FILENAMES = {
+    "melt": ("melt-state.json", "build-state.json", "forge-state.json"),
+    "repair": ("appfix-state.json",),
+    "burndown": ("burndown-state.json",),
+}
 
 
 def is_heavy_skill_path(file_path: str) -> bool:
@@ -48,21 +55,25 @@ def detect_agent_type(task_description: str, subagent_type: str = "", model: str
     return None
 
 
-def _find_lite_heavy_state_path(cwd: str) -> Path | None:
-    for filename in ("build-state.json", "forge-state.json", "burndown-state.json", "appfix-state.json"):
+def _find_state_path_for_type(cwd: str, state_type: str) -> Path | None:
+    """Find state file path for a specific state_type, matching get_autonomous_state logic."""
+    filenames = STATE_TYPE_TO_FILENAMES.get(state_type, ())
+    for filename in filenames:
         path = _find_state_file_path(cwd, filename)
         if path:
             return path
-    for filename in ("build-state.json", "forge-state.json", "burndown-state.json", "appfix-state.json"):
+    for filename in filenames:
         user_path = Path.home() / ".claude" / filename
         if user_path.exists():
             return user_path
     return None
 
 
-def update_lite_heavy_state(cwd: str, updates: dict) -> bool:
-    state_path = _find_lite_heavy_state_path(cwd)
+def update_lite_heavy_state(cwd: str, state_type: str, updates: dict) -> bool:
+    """Update lite_heavy_verification in the state file for the given state_type."""
+    state_path = _find_state_path_for_type(cwd, state_type)
     if not state_path:
+        log_debug(f"No state file found for type '{state_type}'", hook_name="lite-heavy-tracker")
         return False
     try:
         state = json.loads(state_path.read_text())
@@ -90,7 +101,7 @@ def main():
     session_id = input_data.get("session_id", "")
 
     state, state_type = get_autonomous_state(cwd, session_id)
-    if state_type not in ("build", "burndown", "repair"):
+    if state_type not in ("melt", "burndown", "repair"):
         sys.exit(0)
 
     iteration = state.get("iteration", 1)
@@ -100,7 +111,7 @@ def main():
     if tool_name == "Read":
         file_path = tool_input.get("file_path", "")
         if is_heavy_skill_path(file_path):
-            update_lite_heavy_state(cwd, {"heavy_skill_read": True})
+            update_lite_heavy_state(cwd, state_type, {"heavy_skill_read": True})
             log_debug("Tracked heavy/SKILL.md read", hook_name="lite-heavy-tracker")
 
     elif tool_name == "Task":
@@ -110,21 +121,21 @@ def main():
         agent_type = detect_agent_type(description, subagent_type, model)
 
         if agent_type == "first_principles":
-            update_lite_heavy_state(cwd, {"first_principles_launched": True})
+            update_lite_heavy_state(cwd, state_type, {"first_principles_launched": True})
             log_debug("Tracked First Principles agent launch", hook_name="lite-heavy-tracker")
         elif agent_type == "agi_pilled":
-            update_lite_heavy_state(cwd, {"agi_pilled_launched": True})
+            update_lite_heavy_state(cwd, state_type, {"agi_pilled_launched": True})
             log_debug("Tracked AGI-Pilled agent launch", hook_name="lite-heavy-tracker")
         elif agent_type == "research":
-            update_lite_heavy_state(cwd, {"research_launched": True})
+            update_lite_heavy_state(cwd, state_type, {"research_launched": True})
             log_debug("Tracked Research agent launch", hook_name="lite-heavy-tracker")
         elif agent_type == "dynamic":
-            state_path = _find_lite_heavy_state_path(cwd)
+            state_path = _find_state_path_for_type(cwd, state_type)
             try:
                 current_state = json.loads(state_path.read_text()) if state_path else {}
                 lite_heavy = current_state.get("lite_heavy_verification", {})
                 current_count = lite_heavy.get("dynamic_agents_launched", 0)
-                update_lite_heavy_state(cwd, {"dynamic_agents_launched": current_count + 1})
+                update_lite_heavy_state(cwd, state_type, {"dynamic_agents_launched": current_count + 1})
                 log_debug(f"Tracked dynamic agent launch (now {current_count + 1})", hook_name="lite-heavy-tracker")
             except (json.JSONDecodeError, OSError) as e:
                 log_debug(f"Failed to increment dynamic agent count: {e}", hook_name="lite-heavy-tracker")

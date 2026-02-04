@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook to enforce Lite Heavy execution before ExitPlanMode for /build and /repair.
+PreToolUse hook to enforce Lite Heavy execution before ExitPlanMode for /melt and /repair.
 
-For /build: Blocks ExitPlanMode until ALL 4 agents have been launched.
+For /melt: Blocks ExitPlanMode until ALL 4 agents have been launched.
 For /repair: Blocks ExitPlanMode until 3 agents have been launched.
 
 Hook event: PreToolUse
@@ -21,8 +21,8 @@ from _common import log_debug
 from _state import get_autonomous_state
 
 SKILL_AGENT_REQUIREMENTS = {
-    "build": {"heavy_skill_read": True, "first_principles_launched": True, 
-              "agi_pilled_launched": True, "dynamic_agents_required": 2},
+    "melt": {"heavy_skill_read": True, "first_principles_launched": True,
+             "agi_pilled_launched": True, "dynamic_agents_required": 2},
     "repair": {"heavy_skill_read": True, "research_launched": True,
                "first_principles_launched": True, "dynamic_agents_required": 1},
 }
@@ -69,7 +69,7 @@ def main():
         sys.exit(0)
 
     state, state_type = get_autonomous_state(cwd, session_id)
-    if state_type not in ("build", "repair"):
+    if state_type not in ("melt", "repair"):
         sys.exit(0)
 
     iteration = state.get("iteration", 1)
@@ -83,7 +83,7 @@ def main():
     research_launched = lite_heavy.get("research_launched", False)
     dynamic_agents_launched = lite_heavy.get("dynamic_agents_launched", 0)
 
-    requirements = SKILL_AGENT_REQUIREMENTS.get(state_type, SKILL_AGENT_REQUIREMENTS["build"])
+    requirements = SKILL_AGENT_REQUIREMENTS.get(state_type, SKILL_AGENT_REQUIREMENTS["melt"])
     dynamic_required = requirements.get("dynamic_agents_required", 2)
 
     if state_type == "repair":

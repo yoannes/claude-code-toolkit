@@ -4,7 +4,9 @@
     "MAX_THINKING_TOKENS": "31999",
     "ENABLE_TOOL_SEARCH": "auto"
   },
-  "alwaysThinkingEnabled": true,
+  "permissions": {
+    "defaultMode": "dontAsk"
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -298,5 +300,6 @@
         ]
       }
     ]
-  }
+  },
+  "alwaysThinkingEnabled": true
 }

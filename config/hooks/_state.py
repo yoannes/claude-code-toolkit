@@ -60,8 +60,12 @@ def _is_cwd_under_origin(cwd: str, user_state: dict, session_id: str = "") -> bo
     """Check if cwd is under the origin_project from user-level state.
 
     Prevents user-level state from one project affecting unrelated projects.
+    Also prevents stale sessions from affecting new sessions in the same project.
 
-    EXCEPTION: If session_id matches, trust the session regardless of directory.
+    Returns True only if:
+    - session_id matches a non-expired session in the sessions dict, OR
+    - session_id matches the top-level session_id (legacy), OR
+    - No session_id provided AND cwd is under origin_project (backwards compat)
     """
     # MULTI-SESSION: Check if session_id exists in sessions dict
     sessions = user_state.get("sessions", {})
@@ -73,6 +77,12 @@ def _is_cwd_under_origin(cwd: str, user_state: dict, session_id: str = "") -> bo
     if session_id and user_state.get("session_id") == session_id:
         return True
 
+    # If session_id is provided but doesn't match any known session,
+    # this is a NEW session - don't inherit state from old sessions
+    if session_id:
+        return False
+
+    # No session_id provided (backwards compat): check origin_project
     origin = user_state.get("origin_project")
     if not origin:
         return True
@@ -444,14 +454,17 @@ def cleanup_autonomous_state(cwd: str) -> list[str]:
     return deleted
 
 
-def _cleanup_user_level_sessions(state_path: Path) -> bool:
-    """Clean up expired sessions from user-level state file.
+def _cleanup_user_level_sessions(state_path: Path, current_session_id: str = "") -> bool:
+    """Clean up expired or foreign sessions from user-level state file.
 
     MULTI-SESSION SUPPORT: Instead of deleting the whole file, remove
     individual expired sessions from the sessions dict.
 
+    If current_session_id is provided, also removes sessions that don't match
+    (prevents stale sessions from persisting across new sessions).
+
     Returns:
-        True if file was deleted (all sessions expired), False otherwise
+        True if file was deleted (all sessions removed), False otherwise
     """
     try:
         state = json.loads(state_path.read_text())
@@ -466,8 +479,10 @@ def _cleanup_user_level_sessions(state_path: Path) -> bool:
     if sessions:
         valid_sessions = {}
         for session_id, session_info in sessions.items():
+            # Keep session if: not expired AND (no current_session_id OR matches current)
             if not is_state_expired(session_info):
-                valid_sessions[session_id] = session_info
+                if not current_session_id or session_id == current_session_id:
+                    valid_sessions[session_id] = session_info
 
         if not valid_sessions:
             try:
@@ -477,13 +492,25 @@ def _cleanup_user_level_sessions(state_path: Path) -> bool:
                 return False
         elif len(valid_sessions) < len(sessions):
             state["sessions"] = valid_sessions
+            # Also update top-level session_id if we kept exactly one session
+            if len(valid_sessions) == 1:
+                state["session_id"] = list(valid_sessions.keys())[0]
             try:
                 state_path.write_text(json.dumps(state, indent=2))
             except (IOError, OSError):
                 pass
         return False
 
+    # Legacy state without sessions dict
     if is_state_expired(state):
+        try:
+            state_path.unlink()
+            return True
+        except (IOError, OSError):
+            return False
+
+    # If current_session_id provided and doesn't match, delete the file
+    if current_session_id and state.get("session_id") and state.get("session_id") != current_session_id:
         try:
             state_path.unlink()
             return True
@@ -517,7 +544,7 @@ def cleanup_expired_state(cwd: str, current_session_id: str = "") -> list[str]:
     for filename in state_files:
         user_state = user_claude_dir / filename
         if user_state.exists():
-            if _cleanup_user_level_sessions(user_state):
+            if _cleanup_user_level_sessions(user_state, current_session_id):
                 deleted.append(str(user_state))
 
     # 2. Walk UP directory tree and clean project-level state files
