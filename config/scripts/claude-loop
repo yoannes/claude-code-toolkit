@@ -1,0 +1,54 @@
+#!/bin/bash
+# claude-loop - Run a Claude prompt N times with fresh context each time
+#
+# Usage: claude-loop "prompt" [N]
+#
+# Examples:
+#   claude-loop "/improve improve the UX" 5
+#   claude-loop "/improve fix accessibility issues" 10
+
+set -euo pipefail
+
+PROMPT="${1:-}"
+MAX="${2:-3}"
+
+if [[ -z "$PROMPT" ]]; then
+    echo "Usage: claude-loop \"prompt\" [iterations]"
+    echo ""
+    echo "Examples:"
+    echo "  claude-loop \"/improve improve the UX\" 5"
+    echo "  claude-loop \"/improve refactor for clarity\" 10"
+    exit 1
+fi
+
+if ((MAX > 50)); then
+    echo "Capping at 50 iterations"
+    MAX=50
+fi
+
+echo "=== Starting $MAX iterations ==="
+echo "Prompt: $PROMPT"
+echo ""
+
+for ((i=1; i<=MAX; i++)); do
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  ITERATION $i/$MAX"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Run fresh Claude session
+    claude -p "$PROMPT" --allowedTools '*' || {
+        echo "Iteration $i failed with exit code $?"
+        echo "Continue? (y/n)"
+        read -r response
+        [[ "$response" != "y" ]] && exit 1
+    }
+
+    echo ""
+    echo "  ✓ Iteration $i complete"
+    echo ""
+done
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  ALL $MAX ITERATIONS COMPLETE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

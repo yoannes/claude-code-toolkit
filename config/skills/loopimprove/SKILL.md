@@ -1,58 +1,62 @@
 ---
 name: loopimprove
-description: Simple iteration loop. Applies a prompt N times without scoring or targeting. Use for "/loopimprove" or "loop improve X".
+description: Run any prompt N times with fresh context. Each iteration is a new Claude session. Use for "/loopimprove" or run "claude-loop" from terminal.
 ---
 
 # /loopimprove
 
-Apply a prompt N times. No rubrics. No scoring. Just iterate.
+Run a prompt N times, each with completely fresh context. Automates the "run, clear, run again" workflow.
 
 ## Usage
 
-```
-/loopimprove <prompt> [N]
-```
-
-- `<prompt>` - What to do each iteration (required)
-- `[N]` - Number of iterations (default: 3, max: 50)
-
-Examples:
-- `/loopimprove improve the button styling 5`
-- `/loopimprove make the code more readable` (3 iterations)
-- `/loopimprove refactor for clarity 2`
-
-## Behavior
-
-1. Parse prompt and N from input (N defaults to 3, capped at 50)
-2. For each iteration 1..N:
-   - Show: `--- Iteration i/N ---`
-   - Apply the prompt
-   - Summarize what changed
-3. Show final summary
-4. Write checkpoint and stop
-
-## Checkpoint (3+1)
-
-```json
-{
-  "self_report": {
-    "is_job_complete": true,
-    "code_changes_made": true,
-    "linters_pass": true,
-    "linters_pass_at_version": "abc1234",
-    "category": "refactor"
-  },
-  "reflection": {
-    "what_was_done": "Ran N iterations of '<prompt>'",
-    "what_remains": "none",
-    "key_insight": "...",
-    "search_terms": ["loopimprove", ...]
-  }
-}
+From terminal (recommended):
+```bash
+claude-loop "/improve improve the UX" 5
+claude-loop "/improve fix accessibility" 10
 ```
 
-## Triggers
+Or invoke directly (single iteration only):
+```
+/loopimprove improve the button styling
+```
 
-- `/loopimprove`
-- "loop improve"
-- "iterate N times"
+## How It Works
+
+The `claude-loop` script runs `claude -p "your prompt"` in a loop. Each iteration:
+- Starts a **fresh Claude session** (no memory of prior iterations)
+- Runs the full prompt to completion
+- Moves to next iteration
+
+This is exactly like manually doing `/clear` + running the prompt again.
+
+## Installation
+
+```bash
+# Add to PATH (one-time setup)
+ln -sf ~/.claude/scripts/claude-loop /usr/local/bin/claude-loop
+```
+
+## Examples
+
+```bash
+# Improve UX 5 times
+claude-loop "/improve improve the UX of the user flow" 5
+
+# Fix accessibility issues 3 times
+claude-loop "/improve fix accessibility issues" 3
+
+# Run burndown 10 times
+claude-loop "/burndown src/components" 10
+```
+
+## Why Fresh Context?
+
+After ~30 min of work, context fills up with:
+- Failed attempts
+- Intermediate states
+- Stale reasoning
+
+Fresh context each iteration:
+- Re-evaluates from first principles
+- No anchoring to prior decisions
+- Often finds improvements the previous pass missed
